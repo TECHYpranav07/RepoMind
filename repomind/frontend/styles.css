@@ -1,0 +1,137 @@
+/* RepoMind Modern AI Developer Tool UI Theme */
+
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+:root {
+    --bg-main: #090d16;
+    --bg-card: #131b2e;
+    --bg-card-hover: #1c2640;
+    --accent-blue: #3b82f6;
+    --accent-indigo: #6366f1;
+    --accent-cyan: #06b6d4;
+    --accent-emerald: #10b981;
+    --accent-amber: #f59e0b;
+    --accent-rose: #f43f5e;
+    --border-color: #1e293b;
+    --text-primary: #f8fafc;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+}
+
+html, body, [class*="st-"] {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+}
+
+code, pre, .stCodeBlock {
+    font-family: 'JetBrains Mono', monospace !important;
+}
+
+/* Header Banner */
+.repomind-header {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(6, 182, 212, 0.1) 100%);
+    border: 1px solid rgba(99, 102, 241, 0.25);
+    border-radius: 14px;
+    padding: 24px 28px;
+    margin-bottom: 24px;
+}
+
+.repomind-title {
+    font-size: 2.2rem;
+    font-weight: 800;
+    background: linear-gradient(90deg, #60a5fa, #a78bfa, #38bdf8);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin: 0;
+    letter-spacing: -0.5px;
+}
+
+.repomind-subtitle {
+    color: var(--text-secondary);
+    font-size: 1.05rem;
+    margin-top: 6px;
+    font-weight: 400;
+}
+
+/* Metric and Stat Cards */
+.stat-card {
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 16px 20px;
+    transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.stat-card:hover {
+    border-color: rgba(99, 102, 241, 0.4);
+    transform: translateY(-2px);
+}
+
+.stat-val {
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: #f1f5f9;
+}
+
+.stat-label {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 4px;
+}
+
+/* Badge Pills */
+.badge-pill {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-right: 6px;
+    margin-bottom: 4px;
+}
+
+.badge-indigo { background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3); }
+.badge-emerald { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+.badge-amber { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
+.badge-rose { background: rgba(244, 63, 94, 0.15); color: #fb7185; border: 1px solid rgba(244, 63, 94, 0.3); }
+.badge-cyan { background: rgba(6, 182, 212, 0.15); color: #22d3ee; border: 1px solid rgba(6, 182, 212, 0.3); }
+
+/* What-If Impact Card */
+.whatif-card {
+    background: #0f172a;
+    border-left: 4px solid var(--accent-indigo);
+    border-radius: 0 10px 10px 0;
+    padding: 16px 20px;
+    margin-bottom: 14px;
+}
+
+.whatif-high-risk {
+    border-left-color: var(--accent-rose);
+    background: rgba(244, 63, 94, 0.05);
+}
+
+.whatif-med-risk {
+    border-left-color: var(--accent-amber);
+    background: rgba(245, 158, 11, 0.05);
+}
+
+/* Citation Box */
+.citation-box {
+    background-color: rgba(30, 41, 59, 0.6);
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-top: 10px;
+    font-size: 0.85rem;
+}
+
+/* Code Snippet Container */
+.snippet-box {
+    background: #020617;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 0.85rem;
+    color: #e2e8f0;
+}

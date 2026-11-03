@@ -1,0 +1,37 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.cpython-*.pyc
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local configuration & environment variables
+.env
+.env.local
+
+# IDEs & OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Cached repository runtime downloads (preserve sample_repo)
+repomind/data/repositories/*
+!repomind/data/sample_repo/
+repomind/data/indexes/*.faiss
+repomind/data/indexes/*.pkl
+repomind/data/indexes/*.npy
+repomind/data/graphs/*.json
+lib/
