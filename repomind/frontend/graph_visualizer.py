@@ -3,7 +3,6 @@ import os
 import tempfile
 from typing import Dict, Any, List, Optional, Set
 import networkx as nx
-import plotly.graph_objects as go
 
 try:
     from pyvis.network import Network
@@ -137,74 +136,3 @@ class GraphVisualizer:
             pass
 
         return html_content
-
-    @staticmethod
-    def render_plotly_figure(graph: nx.DiGraph, title: str = "Knowledge Graph") -> go.Figure:
-        """Fallback / alternative Plotly 2D interactive network visualization."""
-        if graph.number_of_nodes() == 0:
-            fig = go.Figure()
-            fig.update_layout(title="Empty Graph", template="plotly_dark")
-            return fig
-
-        pos = nx.spring_layout(graph, seed=42, k=0.5)
-
-        edge_x = []
-        edge_y = []
-        for u, v in graph.edges():
-            if u in pos and v in pos:
-                x0, y0 = pos[u]
-                x1, y1 = pos[v]
-                edge_x.extend([x0, x1, None])
-                edge_y.extend([y0, y1, None])
-
-        edge_trace = go.Scatter(
-            x=edge_x, y=edge_y,
-            line=dict(width=1, color="#475569"),
-            hoverinfo="none",
-            mode="lines"
-        )
-
-        node_x = []
-        node_y = []
-        node_text = []
-        node_colors = []
-
-        for node in graph.nodes():
-            if node in pos:
-                x, y = pos[node]
-                node_x.append(x)
-                node_y.append(y)
-                data = graph.nodes[node]
-                ntype = data.get("type", "Unknown")
-                name = data.get("name", node)
-                fpath = data.get("file_path", "")
-                node_text.append(f"<b>{name}</b><br>Type: {ntype}<br>File: {fpath}")
-                node_colors.append(NODE_COLORS.get(ntype, "#94a3b8"))
-
-        node_trace = go.Scatter(
-            x=node_x, y=node_y,
-            mode="markers+text",
-            hoverinfo="text",
-            text=[graph.nodes[n].get("name", n) if graph.number_of_nodes() < 30 else "" for n in graph.nodes()],
-            textposition="top center",
-            hovertext=node_text,
-            marker=dict(
-                showscale=False,
-                color=node_colors,
-                size=14,
-                line_width=2,
-                line=dict(color="#1e293b")
-            )
-        )
-
-        fig = go.Figure(data=[edge_trace, node_trace])
-        fig.update_layout(
-            title=title,
-            template="plotly_dark",
-            showlegend=False,
-            hovermode="closest",
-            margin=dict(b=20, l=20, r=20, t=40),
-            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False)
-        )
-        return fig

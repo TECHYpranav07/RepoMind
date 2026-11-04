@@ -32,7 +32,7 @@ class BenchmarkRunner:
         progress_callback: Optional[Any] = None
     ) -> pd.DataFrame:
         """Run evaluation benchmark across specified modes and collect metrics."""
-        modes = modes or ["vector", "graph", "hybrid"]
+        modes = modes or ["graph", "hybrid"]
         records: List[Dict[str, Any]] = []
 
         total_runs = len(self.dataset) * len(modes)
@@ -139,7 +139,7 @@ class BenchmarkRunner:
             x="mode",
             y="total_latency_s",
             color="mode",
-            color_discrete_map={"VECTOR": "#3b82f6", "GRAPH": "#8b5cf6", "HYBRID": "#10b981"},
+            color_discrete_map={"GRAPH": "#8b5cf6", "HYBRID": "#10b981"},
             title="Average End-to-End Latency by Mode (Seconds)",
             labels={"total_latency_s": "Latency (s)", "mode": "Retrieval Mode"},
             text_auto=".3f"
@@ -158,7 +158,7 @@ class BenchmarkRunner:
         categories = ["Retrieval Recall", "Impact F1", "Answer Correctness", "Faithfulness", "Efficiency (1/Latency)"]
 
         fig = go.Figure()
-        colors = {"VECTOR": "#3b82f6", "GRAPH": "#8b5cf6", "HYBRID": "#10b981"}
+        colors = {"GRAPH": "#8b5cf6", "HYBRID": "#10b981"}
 
         for _, row in avg_df.iterrows():
             m = row["mode"]

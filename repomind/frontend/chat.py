@@ -20,16 +20,12 @@ def render_chat():
         st.markdown("### 🎛️ Retrieval Settings")
         mode = st.radio(
             "Retrieval Strategy:",
-            options=["Hybrid (Graph + Vector)", "Vector Only (FAISS)", "Graph Only (AST Traversal)"],
+            options=["Hybrid (Graph + Vector) [Recommended]", "Graph Only (AST Traversal)"],
             index=0,
-            help="Choose between standard semantic vector retrieval, pure graph relationship traversal, or combined hybrid GraphRAG."
+            help="Choose between combined hybrid GraphRAG (semantic search + graph traversal) or pure graph relationship traversal."
         )
 
-        mode_key = "hybrid"
-        if "Vector Only" in mode:
-            mode_key = "vector"
-        elif "Graph Only" in mode:
-            mode_key = "graph"
+        mode_key = "hybrid" if "Hybrid" in mode else "graph"
 
         top_k = st.slider("Top-K Vector Chunks:", min_value=1, max_value=10, value=4)
         graph_depth = st.slider("Graph Traversal Depth:", min_value=1, max_value=4, value=2)
