@@ -1,5 +1,6 @@
-"""Benchmark execution engine comparing Vector RAG, Graph RAG, and Hybrid GraphRAG."""
+"""Benchmark execution engine comparing Graph RAG and Hybrid GraphRAG."""
 import time
+import math
 from typing import List, Dict, Any, Optional
 import pandas as pd
 import plotly.graph_objects as go
@@ -9,6 +10,25 @@ from repomind.evaluation.dataset import BENCHMARK_DATASET
 from repomind.evaluation.metrics import EvaluationMetrics
 from repomind.retrieval.hybrid_retriever import HybridRetriever
 from repomind.llm.answer_generator import AnswerGenerator
+
+# Consistent color scheme used across all charts
+COLORS = {
+    "GRAPH": "#8b5cf6",    # Purple for GraphRAG
+    "HYBRID": "#10b981",   # Green for Hybrid GraphRAG
+}
+
+METRIC_LABELS = {
+    "precision_at_k": "Precision@K",
+    "recall_at_k": "Recall@K",
+    "impact_precision": "Impact Precision",
+    "impact_recall": "Impact Recall",
+    "impact_f1": "Impact F1",
+    "correctness": "Answer Correctness",
+    "faithfulness": "Faithfulness",
+    "retrieval_latency_s": "Retrieval Latency (s)",
+    "llm_latency_s": "LLM Generation Latency (s)",
+    "total_latency_s": "Total End-to-End Latency (s)",
+}
 
 
 class BenchmarkRunner:
@@ -31,7 +51,11 @@ class BenchmarkRunner:
         graph_depth: int = 2,
         progress_callback: Optional[Any] = None
     ) -> pd.DataFrame:
-        """Run evaluation benchmark across specified modes and collect metrics."""
+        """Run evaluation benchmark across specified modes and collect metrics.
+
+        None values in the DataFrame represent metrics that could not be computed
+        (unannotated ground truth). These are distinct from genuine zero scores.
+        """
         modes = modes or ["graph", "hybrid"]
         records: List[Dict[str, Any]] = []
 
@@ -48,127 +72,219 @@ class BenchmarkRunner:
             for mode in modes:
                 current_run += 1
                 if progress_callback:
-                    progress_callback(f"Evaluating {mode.upper()} on '{qid}' ({current_run}/{total_runs})", current_run / total_runs)
+                    progress_callback(
+                        f"Evaluating {mode.upper()} on '{qid}' ({current_run}/{total_runs})",
+                        current_run / total_runs
+                    )
 
-                start_time = time.time()
-                ret_res = self.retriever.retrieve(
-                    query=question,
-                    mode=mode,
-                    top_k=top_k,
-                    graph_depth=graph_depth
-                )
+                # --- Retrieval ---
+                retrieval_start = time.time()
+                try:
+                    ret_res = self.retriever.retrieve(
+                        query=question,
+                        mode=mode,
+                        top_k=top_k,
+                        graph_depth=graph_depth
+                    )
+                    retrieval_latency = round(time.time() - retrieval_start, 4)
+                except Exception as exc:
+                    # Record failure row; all metrics will be None
+                    records.append(_make_failure_record(item, mode, str(exc)))
+                    continue
 
-                gen_res = self.answer_generator.answer_question(question, ret_res)
-                total_latency = round(time.time() - start_time, 4)
+                # --- LLM Generation ---
+                llm_start = time.time()
+                try:
+                    gen_res = self.answer_generator.answer_question(question, ret_res)
+                    llm_latency = round(time.time() - llm_start, 4)
+                    gen_answer = gen_res.get("answer", "")
+                except Exception as exc:
+                    llm_latency = 0.0
+                    gen_answer = ""
 
+                total_latency = round(retrieval_latency + llm_latency, 4)
+
+                # --- Retrieval Metrics ---
                 retrieved_files = ret_res.get("affected_files", [])
                 prec = EvaluationMetrics.retrieval_precision_at_k(retrieved_files, exp_files, k=top_k)
                 rec = EvaluationMetrics.retrieval_recall_at_k(retrieved_files, exp_files, k=top_k)
 
-                # Identified component overlap
-                found_entities = [c.get("entity", "") for c in ret_res.get("citations", []) if c.get("entity")]
+                # --- Impact / Component Detection Metrics ---
+                found_entities = [
+                    c.get("entity", "")
+                    for c in ret_res.get("citations", [])
+                    if c.get("entity")
+                ]
                 comp_metrics = EvaluationMetrics.component_overlap(found_entities, exp_components)
 
-                # Answer quality
-                gen_answer = gen_res.get("answer", "")
+                # --- Answer Quality Metrics ---
                 correctness = EvaluationMetrics.answer_correctness(gen_answer, ref_answer)
-                faithfulness = EvaluationMetrics.faithfulness_score(gen_answer, ret_res.get("prompt_context", ""))
+                faithfulness = EvaluationMetrics.faithfulness_score(
+                    gen_answer, ret_res.get("prompt_context", "")
+                )
 
                 records.append({
                     "question_id": qid,
                     "category": item.get("category", "General"),
                     "mode": mode.upper(),
+                    # Retrieval metrics
                     "precision_at_k": prec,
                     "recall_at_k": rec,
+                    # Impact detection metrics
                     "impact_precision": comp_metrics["precision"],
                     "impact_recall": comp_metrics["recall"],
                     "impact_f1": comp_metrics["f1"],
+                    "impact_tp": comp_metrics["tp"],
+                    "impact_fp": comp_metrics["fp"],
+                    "impact_fn": comp_metrics["fn"],
+                    "impact_unannotated": comp_metrics.get("unannotated", False),
+                    # Answer quality metrics
                     "correctness": correctness,
                     "faithfulness": faithfulness,
-                    "retrieval_latency_s": ret_res.get("retrieval_latency", 0.0),
+                    # Latency (broken down)
+                    "retrieval_latency_s": retrieval_latency,
+                    "llm_latency_s": llm_latency,
                     "total_latency_s": total_latency,
+                    # Context statistics
                     "context_chars": len(ret_res.get("prompt_context", "")),
-                    "estimated_tokens": ret_res.get("estimated_tokens", 0)
+                    "estimated_tokens": ret_res.get("estimated_tokens", 0),
+                    # Status
+                    "status": "ok",
+                    "error": None,
                 })
 
         df = pd.DataFrame(records)
         return df
 
+    # ------------------------------------------------------------------ #
+    #  Chart factory methods                                               #
+    # ------------------------------------------------------------------ #
+
     @staticmethod
-    def create_comparison_bar_chart(df: pd.DataFrame) -> go.Figure:
-        """Create grouped bar chart comparing mean metrics across modes."""
-        avg_df = df.groupby("mode")[["precision_at_k", "recall_at_k", "impact_f1", "correctness", "faithfulness"]].mean().reset_index()
+    def create_retrieval_chart(df: pd.DataFrame) -> go.Figure:
+        """Chart 1: Retrieval Quality — Precision@K and Recall@K per mode."""
+        avg = _safe_agg(df, ["precision_at_k", "recall_at_k"])
 
-        fig = go.Figure()
         metrics = [
-            ("precision_at_k", "Retrieval Precision@K", "#6366f1"),
-            ("recall_at_k", "Retrieval Recall@K", "#10b981"),
-            ("impact_f1", "Impact F1", "#f59e0b"),
-            ("correctness", "Answer Correctness", "#ec4899"),
-            ("faithfulness", "Faithfulness", "#06b6d4")
+            ("precision_at_k", "Precision@K"),
+            ("recall_at_k", "Recall@K"),
         ]
-
-        for col, label, color in metrics:
-            fig.add_trace(go.Bar(
-                x=avg_df["mode"],
-                y=avg_df[col],
-                name=label,
-                marker_color=color,
-                text=[f"{v:.2f}" for v in avg_df[col]],
-                textposition="auto"
-            ))
-
-        fig.update_layout(
-            title="RAG Retrieval & Generation Performance by Mode",
-            barmode="group",
-            yaxis=dict(range=[0, 1.05], title="Score (0.0 to 1.0)"),
-            xaxis=dict(title="Retrieval Mode"),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-            margin=dict(l=40, r=40, t=60, b=40),
-            template="plotly_dark"
+        return _make_grouped_hbar(
+            avg, metrics,
+            title="Retrieval Quality",
+            subtitle="Precision@K · Recall@K"
         )
-        return fig
+
+    @staticmethod
+    def create_impact_chart(df: pd.DataFrame) -> go.Figure:
+        """Chart 2: Change Impact Detection — Precision, Recall, F1."""
+        avg = _safe_agg(df, ["impact_precision", "impact_recall", "impact_f1"])
+
+        metrics = [
+            ("impact_precision", "Impact Precision"),
+            ("impact_recall", "Impact Recall"),
+            ("impact_f1", "Impact F1"),
+        ]
+        return _make_grouped_hbar(
+            avg, metrics,
+            title="Change Impact Detection",
+            subtitle="Impact Precision · Recall · F1"
+        )
+
+    @staticmethod
+    def create_answer_quality_chart(df: pd.DataFrame) -> go.Figure:
+        """Chart 3: Answer Reliability — Correctness and Faithfulness."""
+        avg = _safe_agg(df, ["correctness", "faithfulness"])
+
+        metrics = [
+            ("correctness", "Answer Correctness"),
+            ("faithfulness", "Faithfulness"),
+        ]
+        return _make_grouped_hbar(
+            avg, metrics,
+            title="Answer Reliability",
+            subtitle="Correctness · Faithfulness"
+        )
 
     @staticmethod
     def create_latency_chart(df: pd.DataFrame) -> go.Figure:
-        """Create bar chart comparing average response latency."""
-        lat_df = df.groupby("mode")["total_latency_s"].mean().reset_index()
+        """Chart 4: Response Time — Retrieval, LLM, and Total latency per mode."""
+        lat_cols = ["retrieval_latency_s", "llm_latency_s", "total_latency_s"]
+        lat_labels = {
+            "retrieval_latency_s": "Retrieval",
+            "llm_latency_s": "LLM Generation",
+            "total_latency_s": "Total End-to-End",
+        }
 
-        fig = px.bar(
-            lat_df,
-            x="mode",
-            y="total_latency_s",
-            color="mode",
-            color_discrete_map={"GRAPH": "#8b5cf6", "HYBRID": "#10b981"},
-            title="Average End-to-End Latency by Mode (Seconds)",
-            labels={"total_latency_s": "Latency (s)", "mode": "Retrieval Mode"},
-            text_auto=".3f"
-        )
+        fig = go.Figure()
+        modes_present = df["mode"].unique().tolist()
+        lat_df = df.groupby("mode")[lat_cols].mean().reset_index()
+
+        col_map = {
+            "retrieval_latency_s": "#6366f1",
+            "llm_latency_s": "#f59e0b",
+            "total_latency_s": "#06b6d4",
+        }
+
+        for col in lat_cols:
+            if col not in lat_df.columns:
+                continue
+            x_vals = []
+            y_vals = []
+            text_vals = []
+            for _, row in lat_df.iterrows():
+                x_vals.append(row["mode"])
+                v = row[col] if not _is_nan(row[col]) else 0.0
+                y_vals.append(v)
+                text_vals.append(f"{v:.3f}s")
+
+            fig.add_trace(go.Bar(
+                name=lat_labels[col],
+                x=x_vals,
+                y=y_vals,
+                text=text_vals,
+                textposition="outside",
+                marker_color=col_map[col],
+                marker_line_width=0,
+            ))
+
         fig.update_layout(
+            title=dict(text="Response Time by Mode (Seconds)", font=dict(size=14, color="#f8fafc")),
+            barmode="group",
+            xaxis=dict(title="Retrieval Mode", color="#94a3b8"),
+            yaxis=dict(title="Latency (seconds)", color="#94a3b8", rangemode="tozero"),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
+                        font=dict(size=11, color="#94a3b8")),
+            margin=dict(l=40, r=40, t=70, b=50),
             template="plotly_dark",
-            showlegend=False,
-            margin=dict(l=40, r=40, t=60, b=40)
+            paper_bgcolor="rgba(13,19,31,0)",
+            plot_bgcolor="rgba(13,19,31,0)",
+            font=dict(family="Plus Jakarta Sans, system-ui, sans-serif"),
         )
         return fig
 
     @staticmethod
+    def create_comparison_bar_chart(df: pd.DataFrame) -> go.Figure:
+        """Legacy combined chart — kept for backwards compatibility."""
+        return BenchmarkRunner.create_retrieval_chart(df)
+
+    @staticmethod
     def create_radar_chart(df: pd.DataFrame) -> go.Figure:
-        """Create multi-axis radar chart showing holistic mode trade-offs."""
-        avg_df = df.groupby("mode").mean().reset_index()
+        """Multi-axis radar chart showing holistic mode trade-offs."""
+        avg_df = df.groupby("mode").mean(numeric_only=True).reset_index()
         categories = ["Retrieval Recall", "Impact F1", "Answer Correctness", "Faithfulness", "Efficiency (1/Latency)"]
 
         fig = go.Figure()
-        colors = {"GRAPH": "#8b5cf6", "HYBRID": "#10b981"}
 
         for _, row in avg_df.iterrows():
             m = row["mode"]
-            eff = min(1.0, 0.5 / max(row["total_latency_s"], 0.05))
+            eff = min(1.0, 0.5 / max(row.get("total_latency_s", 1.0), 0.05))
             values = [
-                row["recall_at_k"],
-                row["impact_f1"],
-                row["correctness"],
-                row["faithfulness"],
-                eff
+                _safe_val(row.get("recall_at_k")),
+                _safe_val(row.get("impact_f1")),
+                _safe_val(row.get("correctness")),
+                _safe_val(row.get("faithfulness")),
+                eff,
             ]
             values.append(values[0])  # close loop
 
@@ -177,14 +293,139 @@ class BenchmarkRunner:
                 theta=categories + [categories[0]],
                 fill="toself",
                 name=m,
-                line=dict(color=colors.get(m, "#cbd5e1"))
+                line=dict(color=COLORS.get(m, "#cbd5e1"))
             ))
 
         fig.update_layout(
             polar=dict(radialaxis=dict(visible=True, range=[0, 1.0])),
             showlegend=True,
-            title="Multi-Dimensional Mode Comparison",
+            title="Multi-Dimensional Comparison",
             template="plotly_dark",
             margin=dict(l=50, r=50, t=60, b=50)
         )
         return fig
+
+
+# ------------------------------------------------------------------ #
+#  Private helpers                                                     #
+# ------------------------------------------------------------------ #
+
+def _normalize_mode_name(df: pd.DataFrame) -> pd.DataFrame:
+    """Ensure mode column is uppercase."""
+    df = df.copy()
+    df["mode"] = df["mode"].str.upper()
+    return df
+
+
+def _safe_agg(df: pd.DataFrame, cols: List[str]) -> pd.DataFrame:
+    """Group by mode and compute mean, skipping None/NaN values."""
+    df = _normalize_mode_name(df)
+    result = df.groupby("mode")[cols].mean(numeric_only=True).reset_index()
+    return result
+
+
+def _make_grouped_hbar(
+    avg_df: pd.DataFrame,
+    metrics: List[tuple],
+    title: str,
+    subtitle: str,
+) -> go.Figure:
+    """Build a grouped horizontal bar chart from avg_df."""
+    fig = go.Figure()
+
+    metric_colors = [
+        "#6366f1", "#10b981", "#f59e0b", "#ec4899", "#06b6d4"
+    ]
+
+    for idx, (col, label) in enumerate(metrics):
+        x_vals = []
+        y_vals = []
+        text_vals = []
+
+        for _, row in avg_df.iterrows():
+            mode = row["mode"]
+            v = row.get(col)
+            if _is_nan(v):
+                x_vals.append(0.0)
+                text_vals.append("N/A")
+            else:
+                x_vals.append(float(v))
+                text_vals.append(f"{float(v):.1%}")
+            y_vals.append(f"{mode} — {label}")
+
+        fig.add_trace(go.Bar(
+            name=label,
+            x=x_vals,
+            y=y_vals,
+            orientation="h",
+            text=text_vals,
+            textposition="outside",
+            marker_color=metric_colors[idx % len(metric_colors)],
+            marker_line_width=0,
+        ))
+
+    fig.update_layout(
+        title=dict(text=f"{title}  ·  {subtitle}", font=dict(size=14, color="#f8fafc")),
+        barmode="group",
+        xaxis=dict(
+            range=[0, 1.15],
+            tickformat=".0%",
+            title="Score",
+            color="#94a3b8",
+            gridcolor="rgba(148,163,184,0.1)",
+        ),
+        yaxis=dict(color="#94a3b8", automargin=True),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
+                    font=dict(size=11, color="#94a3b8")),
+        margin=dict(l=20, r=100, t=70, b=50),
+        template="plotly_dark",
+        paper_bgcolor="rgba(13,19,31,0)",
+        plot_bgcolor="rgba(13,19,31,0)",
+        font=dict(family="Plus Jakarta Sans, system-ui, sans-serif"),
+        height=max(220, 80 * len(avg_df) * len(metrics) // max(len(metrics), 1)),
+    )
+    return fig
+
+
+def _make_failure_record(item: Dict[str, Any], mode: str, error: str) -> Dict[str, Any]:
+    """Create a failure record with all metrics as None."""
+    return {
+        "question_id": item["id"],
+        "category": item.get("category", "General"),
+        "mode": mode.upper(),
+        "precision_at_k": None,
+        "recall_at_k": None,
+        "impact_precision": None,
+        "impact_recall": None,
+        "impact_f1": None,
+        "impact_tp": None,
+        "impact_fp": None,
+        "impact_fn": None,
+        "impact_unannotated": False,
+        "correctness": None,
+        "faithfulness": None,
+        "retrieval_latency_s": None,
+        "llm_latency_s": None,
+        "total_latency_s": None,
+        "context_chars": None,
+        "estimated_tokens": None,
+        "status": "error",
+        "error": error,
+    }
+
+
+def _is_nan(v) -> bool:
+    """Return True if v is None or NaN."""
+    if v is None:
+        return True
+    try:
+        return math.isnan(float(v))
+    except (TypeError, ValueError):
+        return True
+
+
+def _safe_val(v, default: float = 0.0) -> float:
+    """Return float value or default when None/NaN."""
+    if _is_nan(v):
+        return default
+    return float(v)

@@ -244,6 +244,20 @@ class ASTVisitor(ast.NodeVisitor):
         self.current_function = func_name
         caller_id = f"func:{self.file.path}:{func_name}"
 
+        # Class CONTAINS Method
+        if self.current_class:
+            class_id = f"class:{self.file.path}:{self.current_class}"
+            self.edges.append(GraphEdge(
+                source=class_id,
+                target=caller_id,
+                relation="CONTAINS",
+                file_path=self.file.path,
+                line_number=node.lineno,
+                extraction_method="ast_deterministic",
+                confidence=1.0,
+                is_inferred=False
+            ))
+
         # If it's a test function, link to target functions/classes being tested
         if node.name.startswith("test_") or "test" in self.file.path.lower():
             target_guess = node.name.replace("test_", "")

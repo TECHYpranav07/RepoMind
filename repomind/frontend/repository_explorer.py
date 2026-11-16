@@ -48,31 +48,48 @@ def render_repository_explorer():
         # Node Details Inspector
         st.markdown("---")
         st.markdown("#### 🔬 Inspect Entity Details")
-        all_node_ids = sorted(list(graph.nodes()))
-        selected_node_id = st.selectbox("Select Graph Entity to Inspect:", options=all_node_ids)
+        all_node_ids = sorted(list(graph.nodes())) if graph else []
 
-        if selected_node_id and selected_node_id in graph:
-            node_data = graph.nodes[selected_node_id]
-            col_d1, col_d2 = st.columns([1, 1.8])
-            with col_d1:
-                st.markdown(f"**Entity Name:** `{node_data.get('name')}`")
-                st.markdown(f"**Type:** `{node_data.get('type')}`")
-                st.markdown(f"**File Location:** `{node_data.get('file_path')}` (Line {node_data.get('line_number') or 1})")
-                in_deg = graph.in_degree(selected_node_id)
-                out_deg = graph.out_degree(selected_node_id)
-                st.markdown(f"**In-Degree (Incoming Callers):** `{in_deg}`")
-                st.markdown(f"**Out-Degree (Outgoing Dependencies):** `{out_deg}`")
+        if all_node_ids:
+            def _format_node_label(nid: str) -> str:
+                nd = graph.nodes.get(nid, {})
+                name = nd.get("name", nid)
+                ntype = nd.get("type", "Entity")
+                fpath = nd.get("file_path")
+                if fpath:
+                    return f"{name} [{ntype}] — {fpath}"
+                return f"{name} [{ntype}]"
 
-            with col_d2:
-                doc = node_data.get("docstring")
-                if doc:
-                    st.markdown("**Docstring:**")
-                    st.info(doc)
+            selected_node_id = st.selectbox(
+                "Select Graph Entity to Inspect:",
+                options=all_node_ids,
+                format_func=_format_node_label
+            )
 
-                snippet = node_data.get("source_snippet")
-                if snippet:
-                    st.markdown("**Source Code Snippet:**")
-                    st.code(snippet, language="python")
+            if selected_node_id and selected_node_id in graph:
+                node_data = graph.nodes[selected_node_id]
+                col_d1, col_d2 = st.columns([1, 1.8])
+                with col_d1:
+                    st.markdown(f"**Entity Name:** `{node_data.get('name')}`")
+                    st.markdown(f"**Type:** `{node_data.get('type')}`")
+                    st.markdown(f"**File Location:** `{node_data.get('file_path') or 'Repository-level'}` (Line {node_data.get('line_number') or 1})")
+                    in_deg = graph.in_degree(selected_node_id)
+                    out_deg = graph.out_degree(selected_node_id)
+                    st.markdown(f"**In-Degree (Incoming Callers):** `{in_deg}`")
+                    st.markdown(f"**Out-Degree (Outgoing Dependencies):** `{out_deg}`")
+
+                with col_d2:
+                    doc = node_data.get("docstring")
+                    if doc:
+                        st.markdown("**Docstring / Description:**")
+                        st.info(doc)
+
+                    snippet = node_data.get("source_snippet")
+                    if snippet:
+                        st.markdown("**Source Code Snippet:**")
+                        st.code(snippet, language="python")
+        else:
+            st.info("No entities available in the graph.")
 
     # 2. Unified Codebase & Architectural Overview Tab (Merges Hubs, Dependencies & Files)
     with tab_codebase:
@@ -103,7 +120,7 @@ def render_repository_explorer():
         with col_deps:
             st.markdown("#### 📦 Detected Third-Party Packages")
             st.caption("Libraries extracted from requirements and project manifests.")
-            lib_nodes = [data for _, data in graph.nodes(data=True) if data.get("type") == "Library"]
+            lib_nodes = [data for _, data in graph.nodes(data=True) if data.get("type") == "Library"] if graph else []
             if lib_nodes:
                 dep_rows = [
                     {

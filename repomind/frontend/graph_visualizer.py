@@ -56,7 +56,7 @@ class GraphVisualizer:
     ) -> str:
         """Generate interactive self-contained PyVis HTML string."""
         if not PYVIS_AVAILABLE or graph.number_of_nodes() == 0:
-            return "<div>No graph nodes available to display.</div>"
+            return "<div style='color:#94a3b8; padding:20px; text-align:center;'>No graph nodes available to display.</div>"
 
         target_ids = target_ids or set()
         direct_ids = direct_ids or set()
@@ -122,17 +122,22 @@ class GraphVisualizer:
                 width=1.5
             )
 
-        # Generate HTML
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".html", mode="w", encoding="utf-8") as tf:
-            temp_path = tf.name
-            net.write_html(temp_path)
-
-        with open(temp_path, "r", encoding="utf-8") as f:
-            html_content = f.read()
-
+        # In-memory HTML generation avoids temporary file disk I/O and Windows file lock issues
         try:
-            os.remove(temp_path)
+            return net.generate_html()
         except Exception:
-            pass
-
-        return html_content
+            # Fallback to tempfile if generate_html is unavailable in an older PyVis release
+            temp_path = None
+            try:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".html") as tf:
+                    temp_path = tf.name
+                net.write_html(temp_path)
+                with open(temp_path, "r", encoding="utf-8") as f:
+                    html_content = f.read()
+                return html_content
+            finally:
+                if temp_path and os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except Exception:
+                        pass

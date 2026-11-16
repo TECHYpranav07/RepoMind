@@ -26,34 +26,51 @@ class ImpactAnalyzer:
 
     def analyze(self, change: ParsedChange, max_depth: int = 3) -> ImpactReportData:
         report = ImpactReportData()
-        if not self.graph or not change.target_node_ids:
+        if not self.graph:
+            return report
+
+        target_ids = list(change.target_node_ids)
+        # Fallback if no target nodes were matched: search graph nodes by name
+        if not target_ids and change.target_entity:
+            t_lower = change.target_entity.lower()
+            for nid, data in self.graph.nodes(data=True):
+                if t_lower in (data.get("name") or "").lower() or t_lower in nid.lower():
+                    target_ids.append(nid)
+                    if len(target_ids) >= 4:
+                        break
+
+        if not target_ids:
             return report
 
         reversed_graph = self.graph.reverse()
-        seen_nodes: Set[str] = set(change.target_node_ids)
+        seen_nodes: Set[str] = set(target_ids)
+        seen_paths: Set[Tuple[str, str, str]] = set()
 
-        for nid in change.target_node_ids:
+        for nid in target_ids:
             if nid in self.graph:
                 report.target_nodes.append(self._format_node(nid))
 
         # 1. Direct Upstream (1-hop callers, importers, testers)
         direct_ids: Set[str] = set()
-        for target_id in change.target_node_ids:
+        for target_id in target_ids:
             if target_id not in reversed_graph:
                 continue
             for upstream_neighbor in reversed_graph.neighbors(target_id):
-                if upstream_neighbor not in change.target_node_ids:
+                if upstream_neighbor not in target_ids:
                     direct_ids.add(upstream_neighbor)
                     edge_data = self.graph.get_edge_data(upstream_neighbor, target_id, default={})
                     rel = edge_data.get("relation", "DEPENDS_ON")
-                    report.impact_paths.append({
-                        "from": upstream_neighbor,
-                        "to": target_id,
-                        "relation": rel,
-                        "path_text": f"{self._node_name(upstream_neighbor)} --[{rel}]--> {self._node_name(target_id)}",
-                        "depth": 1,
-                        "is_direct": True
-                    })
+                    path_key = (upstream_neighbor, target_id, rel)
+                    if path_key not in seen_paths:
+                        seen_paths.add(path_key)
+                        report.impact_paths.append({
+                            "from": upstream_neighbor,
+                            "to": target_id,
+                            "relation": rel,
+                            "path_text": f"{self._node_name(upstream_neighbor)} --[{rel}]--> {self._node_name(target_id)}",
+                            "depth": 1,
+                            "is_direct": True
+                        })
 
         for nid in direct_ids:
             seen_nodes.add(nid)
@@ -61,11 +78,14 @@ class ImpactAnalyzer:
             node_type = node_data.get("type", "")
 
             if node_type == "Test":
-                report.tests_to_update.append(node_data)
+                if not any(t["id"] == nid for t in report.tests_to_update):
+                    report.tests_to_update.append(node_data)
             elif node_type == "Configuration":
-                report.configs_to_update.append(node_data)
+                if not any(c["id"] == nid for c in report.configs_to_update):
+                    report.configs_to_update.append(node_data)
             else:
-                report.direct_affected.append(node_data)
+                if not any(d["id"] == nid for d in report.direct_affected):
+                    report.direct_affected.append(node_data)
 
         # 2. Inferred / Transitive Upstream (2-hop to max_depth)
         current_layer = set(direct_ids)
@@ -81,22 +101,28 @@ class ImpactAnalyzer:
 
                         edge_data = self.graph.get_edge_data(parent_nid, current_nid, default={})
                         rel = edge_data.get("relation", "DEPENDS_ON")
-                        report.impact_paths.append({
-                            "from": parent_nid,
-                            "to": current_nid,
-                            "relation": rel,
-                            "path_text": f"{self._node_name(parent_nid)} --[{rel}]--> {self._node_name(current_nid)}",
-                            "depth": depth,
-                            "is_direct": False
-                        })
+                        path_key = (parent_nid, current_nid, rel)
+                        if path_key not in seen_paths:
+                            seen_paths.add(path_key)
+                            report.impact_paths.append({
+                                "from": parent_nid,
+                                "to": current_nid,
+                                "relation": rel,
+                                "path_text": f"{self._node_name(parent_nid)} --[{rel}]--> {self._node_name(current_nid)}",
+                                "depth": depth,
+                                "is_direct": False
+                            })
 
                         p_data = self._format_node(parent_nid)
                         if p_data.get("type") == "Test":
-                            report.tests_to_update.append(p_data)
+                            if not any(t["id"] == parent_nid for t in report.tests_to_update):
+                                report.tests_to_update.append(p_data)
                         elif p_data.get("type") == "Configuration":
-                            report.configs_to_update.append(p_data)
+                            if not any(c["id"] == parent_nid for c in report.configs_to_update):
+                                report.configs_to_update.append(p_data)
                         else:
-                            report.inferred_affected.append(p_data)
+                            if not any(i["id"] == parent_nid for i in report.inferred_affected):
+                                report.inferred_affected.append(p_data)
 
             current_layer = next_layer
             if not current_layer:
@@ -107,9 +133,9 @@ class ImpactAnalyzer:
 
         # 4. Assess Overall Risk Level
         total_affected = len(report.direct_affected) + len(report.inferred_affected)
-        if total_affected > 6 or len(report.direct_affected) >= 3:
+        if total_affected > 6 or len(report.direct_affected) >= 3 or len(report.tests_to_update) >= 3:
             report.risk_level = "High"
-        elif total_affected >= 2:
+        elif total_affected >= 2 or len(report.tests_to_update) >= 1:
             report.risk_level = "Medium"
         else:
             report.risk_level = "Low"

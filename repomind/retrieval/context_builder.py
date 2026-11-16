@@ -17,6 +17,7 @@ class ContextBuilder:
         seen_files = set()
         seen_chunks = set()
         total_chars = 0
+        citation_id_counter = 1
 
         # 1. Format Knowledge Graph Path Evidence & Traverse Graph Nodes
         graph_paths = graph_evidence.get("paths", [])
@@ -28,7 +29,7 @@ class ContextBuilder:
                 if fpath:
                     seen_files.add(fpath)
                     citations.append({
-                        "id": len(citations) + 1,
+                        "id": citation_id_counter,
                         "file_path": fpath,
                         "start_line": g_node.get("line_number") or 1,
                         "end_line": g_node.get("end_line") or 10,
@@ -36,6 +37,7 @@ class ContextBuilder:
                         "score": 0.95,
                         "snippet": (g_node.get("source_snippet") or g_node.get("docstring") or f"Entity {g_node.get('name')}")[:200]
                     })
+                    citation_id_counter += 1
 
         if graph_paths:
             path_header = "### Knowledge Graph Structural Relationships:"
@@ -44,19 +46,22 @@ class ContextBuilder:
             formatted_sections.append(graph_block)
             total_chars += len(graph_block)
 
-        # 2. Format Vector Source Chunks with Provenance Citations
+        # 2. Format Vector Source Chunks with Monotonically Unique Citations
         if vector_chunks:
             source_header = "### Retrieved Code & Documentation Sources:"
             formatted_sections.append(source_header)
 
-            for idx, (chunk, score) in enumerate(vector_chunks, start=1):
+            for chunk, score in vector_chunks:
                 if chunk.chunk_id in seen_chunks:
                     continue
                 seen_chunks.add(chunk.chunk_id)
 
+                curr_cite_id = citation_id_counter
+                citation_id_counter += 1
+
                 loc = f"{chunk.file_path}:{chunk.start_line}-{chunk.end_line}"
                 entry = (
-                    f"--- [Source {idx}: {loc} (Relevance: {score:.2f})] ---\n"
+                    f"--- [Source {curr_cite_id}: {loc} (Relevance: {score:.2f})] ---\n"
                     f"Entity: {chunk.entity_name or 'General'}\n"
                     f"{chunk.content.strip()}"
                 )
@@ -69,7 +74,7 @@ class ContextBuilder:
                 seen_files.add(chunk.file_path)
 
                 citations.append({
-                    "id": idx,
+                    "id": curr_cite_id,
                     "file_path": chunk.file_path,
                     "start_line": chunk.start_line,
                     "end_line": chunk.end_line,

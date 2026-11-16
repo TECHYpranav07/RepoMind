@@ -1,5 +1,6 @@
 """Page 1: Home / Repository Dashboard."""
 import os
+import time
 import streamlit as st
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -132,7 +133,14 @@ def _run_ingestion_pipeline(target: str):
         # 6. Initialize Hybrid Retriever
         hybrid_retriever = HybridRetriever(vector_store, embed_engine, graph)
 
-        # Save into session state
+        # Clear previous repo state to prevent cross-repo leaks
+        st.session_state.pop("chat_messages", None)
+        st.session_state.pop("benchmark_results_df", None)
+        st.session_state.pop("benchmark_last_run", None)
+        st.session_state.pop("benchmark_last_status", None)
+        st.session_state.pop("last_whatif_result", None)
+
+        # Save new repository into session state
         st.session_state["repo_loaded"] = True
         st.session_state["repo_meta"] = meta
         st.session_state["repo_files"] = files

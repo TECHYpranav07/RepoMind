@@ -23,27 +23,29 @@ def render_whatif():
         f"using evidence-grounded dependency graph traversal."
     )
 
-    # Preset Scenarios
+    # Preset Quick Scenarios
+    scenarios = _get_quick_scenarios(meta, graph)
     st.markdown("##### ⚡ Quick Scenarios:")
-    p1, p2, p3, p4 = st.columns(4)
-    with p1:
-        if st.button("🔄 Replace FAISS with ChromaDB", use_container_width=True):
-            st.session_state["whatif_input_val"] = "What if we replace FAISS with ChromaDB?"
-    with p2:
-        if st.button("🗑️ Remove Redis Caching", use_container_width=True):
-            st.session_state["whatif_input_val"] = "What if we remove Redis caching?"
-    with p3:
-        if st.button("🛠️ Modify SemanticRetriever", use_container_width=True):
-            st.session_state["whatif_input_val"] = "What components will be affected if I modify SemanticRetriever?"
-    with p4:
-        if st.button("🚀 Upgrade Pydantic to v2", use_container_width=True):
-            st.session_state["whatif_input_val"] = "What happens if we upgrade Pydantic to v2?"
+    pcols = st.columns(len(scenarios))
+    clicked_preset = None
 
-    # Input Box
-    default_text = st.session_state.pop("whatif_input_val", "What if we replace FAISS with ChromaDB?")
+    for i, (label, query_text) in enumerate(scenarios):
+        with pcols[i]:
+            if st.button(label, key=f"whatif_preset_{i}", use_container_width=True):
+                clicked_preset = query_text
+
+    # Update input value in session state if preset was clicked
+    if clicked_preset:
+        st.session_state["whatif_hypothesis_input"] = clicked_preset
+
+    # Ensure default value exists
+    if "whatif_hypothesis_input" not in st.session_state:
+        st.session_state["whatif_hypothesis_input"] = "What if we replace FAISS with ChromaDB?"
+
+    # Input Box with synchronized key
     hypothesis_input = st.text_input(
         "Enter a hypothetical software modification:",
-        value=default_text,
+        key="whatif_hypothesis_input",
         placeholder="e.g. What if we replace FAISS with ChromaDB? or What if we remove Redis caching?"
     )
 
@@ -56,7 +58,7 @@ def render_whatif():
     if run_analysis_btn and hypothesis_input:
         with st.spinner("Analyzing dependency graph neighborhood and generating explainable impact report..."):
             coordinator = WhatIfReportCoordinator(graph, hybrid_retriever, answer_generator)
-            analysis_result = coordinator.run_analysis(hypothesis_input, max_depth=max_depth)
+            analysis_result = coordinator.run_analysis(hypothesis_input.strip(), max_depth=max_depth)
             st.session_state["last_whatif_result"] = analysis_result
 
     # Display Results if available
@@ -204,8 +206,7 @@ def _render_whatif_results(res: dict, full_graph):
     # Tab 5: Export & Download
     with tab_export:
         st.markdown("### 💾 Export What-If Impact Report")
-        coordinator = WhatIfReportCoordinator(full_graph, st.session_state["hybrid_retriever"])
-        md_text = coordinator.export_report_markdown(res)
+        md_text = WhatIfReportCoordinator.export_report_markdown(res)
 
         col_dl1, col_dl2 = st.columns(2)
         with col_dl1:
@@ -240,3 +241,25 @@ def _render_whatif_results(res: dict, full_graph):
                 mime="application/json",
                 use_container_width=True
             )
+
+
+def _get_quick_scenarios(meta, graph):
+    """Return tailored quick What-If scenarios based on the loaded repository."""
+    if not graph or meta.name == "ragcraft":
+        return [
+            ("🔄 Replace FAISS with ChromaDB", "What if we replace FAISS with ChromaDB?"),
+            ("🗑️ Remove Redis Caching", "What if we remove Redis caching?"),
+            ("🛠️ Modify SemanticRetriever", "What components will be affected if I modify SemanticRetriever?"),
+            ("🚀 Upgrade Pydantic to v2", "What happens if we upgrade Pydantic to v2?")
+        ]
+
+    # For other repositories, build scenarios using actual components
+    classes = [d.get("name") for _, d in graph.nodes(data=True) if d.get("type") == "Class" and d.get("name")]
+    libs = [d.get("name") for _, d in graph.nodes(data=True) if d.get("type") == "Library" and d.get("name")]
+
+    s1 = (f"🔄 Replace {classes[0]}", f"What if we replace {classes[0]} with a custom adapter?") if classes else ("🔄 Refactor Storage", "What if we refactor storage?")
+    s2 = (f"🗑️ Remove {libs[0]}", f"What if we remove {libs[0]}?") if libs else ("🗑️ Remove Dep", "What if we remove external dependencies?")
+    s3 = (f"🛠️ Modify {classes[1]}", f"What components will be affected if I modify {classes[1]}?") if len(classes) > 1 else ("🛠️ Modify Core", "What if we modify core modules?")
+    s4 = (f"🚀 Upgrade {libs[1]}", f"What happens if we upgrade {libs[1]} to the latest version?") if len(libs) > 1 else ("🚀 Upgrade Dependencies", "What happens if we upgrade dependencies?")
+
+    return [s1, s2, s3, s4]
