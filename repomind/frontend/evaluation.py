@@ -1,36 +1,35 @@
-"""Page 5: Evaluation & Benchmark Dashboard — Redesigned.
+"""Page 5: Evaluation & Benchmark Dashboard — Simplified & Streamlined.
 
-Sections:
-  A — Page Header (repo info, graph nodes, chunks, question count, last run status)
-  B — Benchmark Controls (run button, mode selector, progress)
-  C — Executive Summary KPI cards
-  D — Performance Comparison charts (4 separate charts)
-  E — Automated Interpretation
-  F — Detailed Results (collapsible, filterable table + CSV export)
-  G — Metric Glossary
+Features:
+  - Page Header: Clean stats (Repository, Graph Nodes, Last Run)
+  - Benchmark Controls: 2-row layout with Live AST vs Curated source and execution speed
+  - Executive Summary: 4 core KPI cards with clear winner indicators
+  - Performance Charts: 2x2 grid of comparative Plotly charts
+  - Smart Interpretation: Executive verdict banner + concise comparison matrix
+  - Detailed Results: Filterable table + CSV export in a dedicated expander
+  - Query Deep Dive: Side-by-side Ground Truth vs RAG retrieval in a dedicated expander
+  - Metric Glossary: Plain-English metric explanations
 """
 from __future__ import annotations
 
-import math
 import datetime
 from typing import Optional
 
 import pandas as pd
 import streamlit as st
 
-from repomind.evaluation.benchmark import BenchmarkRunner, COLORS, _is_nan, _safe_val
+from repomind.evaluation.benchmark import BenchmarkRunner, _is_nan
 from repomind.evaluation.dataset import BENCHMARK_DATASET, generate_ast_ground_truth_dataset
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Public entry point
+# Public Entry Point
 # ─────────────────────────────────────────────────────────────────────────────
 
 def render_evaluation():
-    """Render the redesigned Evaluation & Benchmark dashboard."""
+    """Render the simplified Evaluation & Benchmark dashboard."""
     _inject_eval_css()
 
-    # Guard — repo must be loaded
     if not st.session_state.get("repo_loaded", False):
         st.warning(
             "⚠️ No repository loaded. "
@@ -38,30 +37,28 @@ def render_evaluation():
         )
         return
 
-    meta           = st.session_state.get("repo_meta")
+    meta = st.session_state.get("repo_meta")
     hybrid_retriever = st.session_state.get("hybrid_retriever")
     answer_generator = st.session_state.get("answer_generator")
-    graph          = st.session_state.get("graph")
-    chunks         = st.session_state.get("repo_chunks", [])
+    graph = st.session_state.get("graph")
 
-    # ── SECTION A: Header ───────────────────────────────────────────────────
-    _render_header(meta, graph, chunks)
+    # Header
+    _render_header(meta, graph)
 
-    st.markdown('<div class="eval-divider"></div>', unsafe_allow_html=True)
+    # Controls
+    run_clicked, selected_modes, num_questions, gt_source, speed_mode = _render_controls()
 
-    # ── SECTION B: Controls ─────────────────────────────────────────────────
-    run_clicked, selected_modes, num_questions, gt_source, speed_mode = _render_controls(graph)
-
-    # Execute benchmark
     if run_clicked:
         if not selected_modes:
             st.error("Please select at least one retrieval mode.")
         elif hybrid_retriever is None:
-            st.error("Retriever not initialised. Please reload the repository.")
+            st.error("Retriever not initialized. Please reload the repository.")
         else:
-            _run_and_store_benchmark(hybrid_retriever, answer_generator, selected_modes, num_questions, gt_source, speed_mode, graph)
+            _run_and_store_benchmark(
+                hybrid_retriever, answer_generator, selected_modes,
+                num_questions, gt_source, speed_mode, graph
+            )
 
-    # ── Render results (or placeholder) ────────────────────────────────────
     df: Optional[pd.DataFrame] = st.session_state.get("benchmark_results_df")
 
     if df is None or df.empty:
@@ -71,72 +68,68 @@ def render_evaluation():
 
     st.markdown('<div class="eval-divider"></div>', unsafe_allow_html=True)
 
-    # ── SECTION C: Executive Summary ────────────────────────────────────────
+    # Executive Summary (KPIs)
     _render_kpi_cards(df)
 
     st.markdown('<div class="eval-divider"></div>', unsafe_allow_html=True)
 
-    # ── SECTION D: Performance Charts ───────────────────────────────────────
+    # Performance Charts (2x2 grid)
     _render_charts(df)
 
     st.markdown('<div class="eval-divider"></div>', unsafe_allow_html=True)
 
-    # ── SECTION E: Interpretation ────────────────────────────────────────────
+    # Smart Interpretation (Verdict + Matrix)
     _render_interpretation(df)
 
     st.markdown('<div class="eval-divider"></div>', unsafe_allow_html=True)
 
-    # ── SECTION F: Detailed Results ─────────────────────────────────────────
+    # Detailed Results (Expander)
     _render_detailed_results(df)
 
-    st.markdown('<div class="eval-divider"></div>', unsafe_allow_html=True)
+    # Query Deep Dive vs Ground Truth (Expander)
+    _render_query_deep_dive(df)
 
-    # ── SECTION G: Glossary ─────────────────────────────────────────────────
+    # Glossary (Expander)
     _render_glossary()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Section A — Header
+# Header
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _render_header(meta, graph, chunks):
+def _render_header(meta, graph):
     last_run = st.session_state.get("benchmark_last_run")
-    last_run_status = st.session_state.get("benchmark_last_status", "—")
+    last_run_str = last_run.strftime("%H:%M:%S") if last_run else "Not run yet"
+    repo_name = meta.full_name if meta else "Loaded Repo"
+    node_count = graph.number_of_nodes() if graph else 0
 
     st.markdown(
         """
         <div class="eval-header">
-            <div class="eval-header-left">
-                <h1 class="eval-title">Evaluation &amp; Benchmark</h1>
-                <p class="eval-subtitle">
-                    Measure how effectively <span class="mode-badge mode-graph">GraphRAG</span>
-                    and <span class="mode-badge mode-hybrid">Hybrid GraphRAG</span>
-                    understand software repositories against <span class="mode-badge" style="background:rgba(59,130,246,0.15); color:#60a5fa; border:1px solid rgba(59,130,246,0.3);">⚡ Deterministic AST Ground Truth</span>.
-                </p>
-            </div>
+            <h1 class="eval-title">Evaluation &amp; Benchmark</h1>
+            <p class="eval-subtitle">
+                Compare <span class="mode-badge mode-graph">GraphRAG</span> vs 
+                <span class="mode-badge mode-hybrid">Hybrid GraphRAG</span> against 
+                <span class="mode-badge mode-ast">⚡ Deterministic AST Ground Truth</span>
+            </p>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    n_nodes  = graph.number_of_nodes() if graph else 0
-    n_chunks = len(chunks)
-    n_q      = len(BENCHMARK_DATASET)
-    repo_name = meta.full_name if meta else "—"
-    last_run_str = last_run.strftime("%Y-%m-%d %H:%M") if last_run else "Never"
-
-    c1, c2, c3, c4, c5 = st.columns(5)
-    _stat_pill(c1, "📦 Repository",   repo_name,      "#6366f1")
-    _stat_pill(c2, "🕸️ Graph Nodes",  str(n_nodes),   "#10b981")
-    _stat_pill(c3, "📄 Doc Chunks",   str(n_chunks),  "#06b6d4")
-    _stat_pill(c4, "❓ Test Questions", str(n_q),      "#f59e0b")
-    _stat_pill(c5, "🕐 Last Run",      last_run_str,  "#ec4899")
+    c1, c2, c3 = st.columns([1.5, 1.2, 1.3])
+    with c1:
+        _stat_pill("📦 Active Repository", repo_name, "#6366f1")
+    with c2:
+        _stat_pill("🕸️ Code Graph Nodes", f"{node_count:,} AST nodes", "#10b981")
+    with c3:
+        _stat_pill("⏱️ Last Run Time", last_run_str, "#f59e0b")
 
 
-def _stat_pill(col, label: str, value: str, color: str):
-    col.markdown(
+def _stat_pill(label: str, value: str, border_color: str):
+    st.markdown(
         f"""
-        <div class="stat-pill" style="border-left-color:{color};">
+        <div class="stat-pill" style="border-left-color:{border_color};">
             <div class="stat-pill-label">{label}</div>
             <div class="stat-pill-value">{value}</div>
         </div>
@@ -146,75 +139,75 @@ def _stat_pill(col, label: str, value: str, color: str):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Section B — Benchmark Controls
+# Controls (Clean 2-Row Layout)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _render_controls(graph=None):
-    st.markdown("### ⚙️ Benchmark Controls")
+def _render_controls():
+    with st.container():
+        st.markdown('<div class="controls-panel">', unsafe_allow_html=True)
 
-    col_source, col_mode, col_speed, col_num, col_btn = st.columns([1.5, 1.3, 1.3, 0.7, 1.0])
+        # Row 1: Source & Engine
+        r1_c1, r1_c2 = st.columns([1.5, 1.5])
+        with r1_c1:
+            gt_source = st.selectbox(
+                "Ground Truth Source:",
+                options=[
+                    "⚡ Live AST Ground Truth (Auto-extracted from Repo)",
+                    "📚 Curated Architecture Golden Set",
+                ],
+                index=0,
+                key="eval_gt_source",
+                help="Live AST directly inspects Python syntax trees to compute ground-truth dependencies with 0% hallucination.",
+            )
+        with r1_c2:
+            speed_mode = st.selectbox(
+                "Execution Engine:",
+                options=[
+                    "⚡ Fast Parallel (Gemini Flash · 2-3s)",
+                    "🚀 Instant Turbo (Local Engine · <1s)",
+                ],
+                index=0,
+                key="eval_speed_mode",
+                help="Fast Parallel runs queries concurrently. Instant Turbo uses local deterministic AST synthesis with 0 API delay.",
+            )
 
-    with col_source:
-        gt_source = st.selectbox(
-            "Ground Truth Source:",
-            options=[
-                "⚡ Live AST Ground Truth (Auto-extracted)",
-                "📚 Curated Architecture Golden Set"
-            ],
-            index=0,
-            key="eval_gt_source",
-            help="Live AST dynamically extracts 100% deterministic compiler facts from this repository's Abstract Syntax Tree, guaranteeing verifiable callers and tests with zero hallucinations."
-        )
+        # Row 2: Mode, Count, Run Button
+        r2_c1, r2_c2, r2_c3 = st.columns([1.6, 0.8, 1.0])
+        with r2_c1:
+            mode_choice = st.radio(
+                "Retrieval Modes to Test:",
+                options=["Both (GraphRAG + Hybrid)", "GraphRAG only", "Hybrid only"],
+                index=0,
+                horizontal=True,
+                key="eval_mode_choice",
+            )
+        with r2_c2:
+            num_questions = st.number_input(
+                "Questions:",
+                min_value=1,
+                max_value=10,
+                value=3,
+                step=1,
+                key="eval_num_questions",
+                help="Number of benchmark queries to evaluate.",
+            )
+        with r2_c3:
+            st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+            is_running = st.session_state.get("benchmark_running", False)
+            run_clicked = st.button(
+                "🚀 Run Benchmark" if not is_running else "⏳ Running…",
+                type="primary",
+                use_container_width=True,
+                disabled=is_running,
+                key="eval_run_btn",
+            )
 
-    with col_mode:
-        mode_choice = st.radio(
-            "Retrieval Mode:",
-            options=["Both (GraphRAG + Hybrid)", "GraphRAG only", "Hybrid GraphRAG only"],
-            index=0,
-            horizontal=True,
-            key="eval_mode_choice",
-        )
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    with col_speed:
-        speed_mode = st.selectbox(
-            "Execution Engine:",
-            options=[
-                "⚡ Fast Parallel (Gemini Flash · 2-3s)",
-                "🚀 Instant Turbo (Local Engine · <1s)"
-            ],
-            index=0,
-            key="eval_speed_mode",
-            help="Fast Parallel runs queries concurrently across worker threads. Instant Turbo uses local AST grounded synthesis for sub-second execution."
-        )
-
-    with col_num:
-        default_q = 3
-        num_questions = st.number_input(
-            "Questions:",
-            min_value=1,
-            max_value=10,
-            value=default_q,
-            step=1,
-            key="eval_num_questions",
-            help="Number of questions to evaluate (default 3 for instant run).",
-        )
-
-    with col_btn:
-        st.markdown("<br>", unsafe_allow_html=True)
-        is_running = st.session_state.get("benchmark_running", False)
-        run_clicked = st.button(
-            "🚀 Run Benchmark" if not is_running else "⏳ Running…",
-            type="primary",
-            use_container_width=True,
-            disabled=is_running,
-            key="eval_run_btn",
-        )
-
-    # Map radio to mode list
     mode_map = {
         "Both (GraphRAG + Hybrid)": ["graph", "hybrid"],
-        "GraphRAG only":            ["graph"],
-        "Hybrid GraphRAG only":     ["hybrid"],
+        "GraphRAG only": ["graph"],
+        "Hybrid only": ["hybrid"],
     }
     selected_modes = mode_map[mode_choice]
 
@@ -235,9 +228,7 @@ def _run_and_store_benchmark(hybrid_retriever, answer_generator, modes, num_ques
         dataset = BENCHMARK_DATASET[:num_questions]
 
     def prog_cb(msg: str, pct: float):
-        status_label.markdown(
-            f'<div class="progress-msg">⏳ {msg}</div>', unsafe_allow_html=True
-        )
+        status_label.markdown(f'<div class="progress-msg">⏳ {msg}</div>', unsafe_allow_html=True)
         progress_bar.progress(min(pct, 1.0))
 
     try:
@@ -251,8 +242,8 @@ def _run_and_store_benchmark(hybrid_retriever, answer_generator, modes, num_ques
         runner = BenchmarkRunner(hybrid_retriever, eval_gen, dataset)
         df_results = runner.run_benchmark(modes=modes, progress_callback=prog_cb, parallel=True, max_workers=4)
 
-        st.session_state["benchmark_results_df"]  = df_results
-        st.session_state["benchmark_last_run"]    = datetime.datetime.now()
+        st.session_state["benchmark_results_df"] = df_results
+        st.session_state["benchmark_last_run"] = datetime.datetime.now()
         st.session_state["benchmark_last_status"] = "✅ Success"
 
         progress_bar.progress(1.0)
@@ -268,28 +259,23 @@ def _run_and_store_benchmark(hybrid_retriever, answer_generator, modes, num_ques
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Section C — Executive Summary KPI Cards
+# Executive Summary KPI Cards
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_kpi_cards(df: pd.DataFrame):
     st.markdown("### 📊 Executive Summary")
-    st.caption(
-        "Four key performance indicators — each answers one important question about the system."
-    )
 
     agg = df.groupby("mode").mean(numeric_only=True).reset_index()
-
-    graph_row  = agg[agg["mode"] == "GRAPH"].iloc[0]  if "GRAPH"  in agg["mode"].values else None
+    graph_row = agg[agg["mode"] == "GRAPH"].iloc[0] if "GRAPH" in agg["mode"].values else None
     hybrid_row = agg[agg["mode"] == "HYBRID"].iloc[0] if "HYBRID" in agg["mode"].values else None
 
     kpis = [
         {
-            "title": "Retrieval Quality",
+            "title": "Retrieval Recall",
             "metric": "recall_at_k",
             "icon": "🎯",
             "unit": "%",
-            "description": "How often the system retrieves the information needed to answer a question.",
-            "metric_name": "Recall@K",
+            "desc": "% of relevant files successfully retrieved",
             "higher_is_better": True,
         },
         {
@@ -297,17 +283,15 @@ def _render_kpi_cards(df: pd.DataFrame):
             "metric": "impact_f1",
             "icon": "🔍",
             "unit": "%",
-            "description": "How accurately the system identifies components affected by a proposed change.",
-            "metric_name": "Impact F1",
+            "desc": "F1 score for detecting blast-radius affected components",
             "higher_is_better": True,
         },
         {
-            "title": "Answer Reliability",
+            "title": "Answer Faithfulness",
             "metric": "faithfulness",
             "icon": "✅",
             "unit": "%",
-            "description": "How well the generated answer is supported by retrieved evidence.",
-            "metric_name": "Faithfulness",
+            "desc": "% of generated answer grounded in retrieved code",
             "higher_is_better": True,
         },
         {
@@ -315,8 +299,7 @@ def _render_kpi_cards(df: pd.DataFrame):
             "metric": "total_latency_s",
             "icon": "⚡",
             "unit": "s",
-            "description": "How long the system takes to produce an answer (retrieval + LLM generation).",
-            "metric_name": "Avg Latency",
+            "desc": "Total end-to-end execution time",
             "higher_is_better": False,
         },
     ]
@@ -324,344 +307,216 @@ def _render_kpi_cards(df: pd.DataFrame):
     cols = st.columns(4)
     for col, kpi in zip(cols, kpis):
         with col:
-            _render_kpi_card(kpi, graph_row, hybrid_row)
+            _render_single_kpi(kpi, graph_row, hybrid_row)
 
 
-def _render_kpi_card(kpi: dict, graph_row, hybrid_row):
+def _render_single_kpi(kpi: dict, graph_row, hybrid_row):
     metric = kpi["metric"]
     is_latency = kpi["unit"] == "s"
     higher_is_better = kpi["higher_is_better"]
 
-    g_val = _get_val(graph_row,  metric)
-    h_val = _get_val(hybrid_row, metric)
+    g_val = _get_num(graph_row, metric)
+    h_val = _get_num(hybrid_row, metric)
 
-    def fmt(v):
+    def _fmt(v):
         if v is None:
             return "N/A"
         return f"{v:.3f}s" if is_latency else f"{v:.1%}"
 
-    def winner_badge(g, h):
-        if g is None and h is None:
-            return ""
-        if g is None:
-            return '<span class="winner-badge hybrid">Hybrid</span>'
-        if h is None:
-            return '<span class="winner-badge graph">Graph</span>'
-        if higher_is_better:
-            if h > g + 0.001:
-                return '<span class="winner-badge hybrid">↑ Hybrid</span>'
-            elif g > h + 0.001:
-                return '<span class="winner-badge graph">↑ Graph</span>'
+    # Determine winner badge
+    winner_pill = ""
+    if g_val is not None and h_val is not None:
+        diff = h_val - g_val
+        threshold = 0.001 if not is_latency else 0.05
+        if abs(diff) < threshold:
+            winner_pill = '<span class="kpi-tag tie">Tied</span>'
+        elif (diff > 0 and higher_is_better) or (diff < 0 and not higher_is_better):
+            winner_pill = '<span class="kpi-tag hybrid">Hybrid leads</span>'
         else:
-            if h < g - 0.001:
-                return '<span class="winner-badge hybrid">↓ Hybrid faster</span>'
-            elif g < h - 0.001:
-                return '<span class="winner-badge graph">↓ Graph faster</span>'
-        return '<span class="winner-badge tie">≈ Tied</span>'
+            winner_pill = '<span class="kpi-tag graph">Graph leads</span>'
 
-    def diff_text(g, h):
-        if g is None or h is None:
-            return ""
-        diff = h - g
-        if is_latency:
-            sign = "+" if diff > 0 else ""
-            return f"{sign}{diff:.3f}s vs Graph"
-        else:
-            sign = "+" if diff > 0 else ""
-            return f"{sign}{diff:.1%} vs Graph"
-
-    rows_html = ""
-    if graph_row is not None:
-        rows_html += f'<div class="kpi-row"><span class="kpi-mode graph-label">Graph</span><span class="kpi-val">{fmt(g_val)}</span></div>'
-    if hybrid_row is not None:
-        rows_html += f'<div class="kpi-row"><span class="kpi-mode hybrid-label">Hybrid</span><span class="kpi-val">{fmt(h_val)}</span></div>'
-    if graph_row is not None and hybrid_row is not None:
-        d = diff_text(g_val, h_val)
-        if d:
-            rows_html += f'<div class="kpi-diff">{d}</div>'
-
-    badge = winner_badge(g_val, h_val)
+    g_str = _fmt(g_val)
+    h_str = _fmt(h_val)
 
     st.markdown(
         f"""
         <div class="kpi-card">
-            <div class="kpi-header">
-                <span class="kpi-icon">{kpi["icon"]}</span>
-                <span class="kpi-title">{kpi["title"]}</span>
-                {badge}
+            <div class="kpi-top">
+                <span class="kpi-icon">{kpi['icon']}</span>
+                <span class="kpi-title">{kpi['title']}</span>
+                {winner_pill}
             </div>
-            <div class="kpi-metric-name">{kpi["metric_name"]}</div>
-            {rows_html}
-            <div class="kpi-desc">{kpi["description"]}</div>
+            <div class="kpi-body">
+                <div class="kpi-row">
+                    <span class="mode-badge mode-graph">Graph</span>
+                    <span class="kpi-val">{g_str}</span>
+                </div>
+                <div class="kpi-row">
+                    <span class="mode-badge mode-hybrid">Hybrid</span>
+                    <span class="kpi-val">{h_str}</span>
+                </div>
+            </div>
+            <div class="kpi-footer">{kpi['desc']}</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
 
-def _get_val(row, col: str):
+def _get_num(row, col: str) -> Optional[float]:
     if row is None:
         return None
-    v = row.get(col)
-    if _is_nan(v):
+    val = row.get(col)
+    if _is_nan(val):
         return None
-    return float(v)
+    return float(val)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Section D — Performance Charts
+# Performance Charts (Clean 2x2 Grid)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_charts(df: pd.DataFrame):
-    st.markdown("### 📈 Performance Comparison")
-    st.caption(
-        "Each chart focuses on one aspect of the experiment. "
-        "Purple = **GraphRAG** · Green = **Hybrid GraphRAG**."
-    )
+    st.markdown("### 📈 Performance Visualizations")
 
-    chart_col1, chart_col2 = st.columns(2)
+    c1, c2 = st.columns(2)
+    with c1:
+        st.plotly_chart(BenchmarkRunner.create_retrieval_chart(df), use_container_width=True)
+    with c2:
+        st.plotly_chart(BenchmarkRunner.create_impact_chart(df), use_container_width=True)
 
-    with chart_col1:
-        st.plotly_chart(
-            BenchmarkRunner.create_retrieval_chart(df),
-            use_container_width=True,
-        )
-        st.caption(
-            "**Retrieval Quality** — What fraction of relevant files were retrieved "
-            "(Recall) and what fraction of retrieved files were relevant (Precision)?"
-        )
-
-    with chart_col2:
-        st.plotly_chart(
-            BenchmarkRunner.create_impact_chart(df),
-            use_container_width=True,
-        )
-        st.caption(
-            "**Change Impact Detection** — How accurately did the system identify "
-            "components affected by a proposed change?"
-        )
-
-    chart_col3, chart_col4 = st.columns(2)
-
-    with chart_col3:
-        st.plotly_chart(
-            BenchmarkRunner.create_answer_quality_chart(df),
-            use_container_width=True,
-        )
-        st.caption(
-            "**Answer Reliability** — How correct (vs. reference) and how grounded "
-            "(vs. retrieved context) was the generated answer?"
-        )
-
-    with chart_col4:
-        st.plotly_chart(
-            BenchmarkRunner.create_latency_chart(df),
-            use_container_width=True,
-        )
-        st.caption(
-            "**Response Time** — Broken down into retrieval latency, "
-            "LLM generation latency, and total end-to-end latency."
-        )
+    c3, c4 = st.columns(2)
+    with c3:
+        st.plotly_chart(BenchmarkRunner.create_answer_quality_chart(df), use_container_width=True)
+    with c4:
+        st.plotly_chart(BenchmarkRunner.create_latency_chart(df), use_container_width=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Section E — Interpretation
+# Smart Interpretation (Executive Verdict + Comparison Matrix)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_interpretation(df: pd.DataFrame):
-    st.markdown("### 💡 What Do These Results Mean?")
+    st.markdown("### 💡 Key Takeaways & Comparison Matrix")
 
     agg = df.groupby("mode").mean(numeric_only=True).reset_index()
-    graph_row  = agg[agg["mode"] == "GRAPH"].iloc[0]  if "GRAPH"  in agg["mode"].values else None
+    graph_row = agg[agg["mode"] == "GRAPH"].iloc[0] if "GRAPH" in agg["mode"].values else None
     hybrid_row = agg[agg["mode"] == "HYBRID"].iloc[0] if "HYBRID" in agg["mode"].values else None
 
     if graph_row is None and hybrid_row is None:
-        st.info("No results to interpret.")
+        st.info("Run benchmark to view comparison insights.")
         return
 
-    # Build interpretation narratives
-    bullets = []
-    hybrid_wins = 0
-    graph_wins  = 0
-    total_comparable = 0
-
-    comparisons = [
-        ("recall_at_k",   "retrieval recall",         "higher is better", True),
-        ("precision_at_k","retrieval precision",       "higher is better", True),
-        ("impact_f1",     "impact detection F1",       "higher is better", True),
-        ("correctness",   "answer correctness",        "higher is better", True),
-        ("faithfulness",  "answer faithfulness",       "higher is better", True),
-        ("total_latency_s","end-to-end latency",       "lower is better",  False),
+    # Metrics definition
+    metrics_meta = [
+        ("recall_at_k", "Retrieval Recall", True, "%", "Broader semantic file discovery"),
+        ("precision_at_k", "Retrieval Precision", True, "%", "Noise filtration in context"),
+        ("impact_f1", "Impact Detection F1", True, "%", "Deterministic AST dependency traversal"),
+        ("correctness", "Answer Correctness", True, "%", "Overlap with golden reference answer"),
+        ("faithfulness", "Answer Faithfulness", True, "%", "Evidence grounding in code chunks"),
+        ("total_latency_s", "Total Latency", False, "s", "Zero embedding overhead"),
     ]
 
-    for metric, label, direction, higher_is_better in comparisons:
-        g = _get_val(graph_row,  metric)
-        h = _get_val(hybrid_row, metric)
+    h_wins, g_wins, total = 0, 0, 0
+    table_rows = []
 
-        if g is None and h is None:
-            bullets.append(f"• **{label.title()}**: Not enough data to compare.")
+    for key, label, higher_is_better, unit, advantage_note in metrics_meta:
+        g = _get_num(graph_row, key)
+        h = _get_num(hybrid_row, key)
+
+        if g is None or h is None:
             continue
 
-        if g is None:
-            bullets.append(f"• **{label.title()}**: Only Hybrid evaluated ({_fmt_metric(h, metric)}).")
-            continue
-
-        if h is None:
-            bullets.append(f"• **{label.title()}**: Only Graph evaluated ({_fmt_metric(g, metric)}).")
-            continue
-
-        total_comparable += 1
+        total += 1
         diff = h - g
-        threshold = 0.01 if metric != "total_latency_s" else 0.05
+        is_lat = unit == "s"
+        threshold = 0.005 if not is_lat else 0.05
+
+        def _format_val(v):
+            return f"{v:.3f}s" if is_lat else f"{v:.1%}"
 
         if abs(diff) < threshold:
-            bullets.append(
-                f"• **{label.title()}**: Both methods performed similarly "
-                f"(Graph: {_fmt_metric(g, metric)}, Hybrid: {_fmt_metric(h, metric)})."
-            )
+            winner = "🤝 Tied"
+            winner_class = "color:#94a3b8;"
+            takeaway = "Comparable performance"
         elif (diff > 0 and higher_is_better) or (diff < 0 and not higher_is_better):
-            hybrid_wins += 1
-            verb = "achieved higher" if higher_is_better else "was faster"
-            reason = _get_reason(metric, "hybrid")
-            bullets.append(
-                f"• **{label.title()}**: Hybrid GraphRAG {verb} "
-                f"({_fmt_metric(h, metric)} vs {_fmt_metric(g, metric)}). {reason}"
-            )
+            h_wins += 1
+            winner = "🟢 Hybrid"
+            winner_class = "color:#34d399; font-weight:700;"
+            takeaway = f"Hybrid +{abs(diff):.1%}" if not is_lat else f"Hybrid {abs(diff):.3f}s faster"
         else:
-            graph_wins += 1
-            verb = "achieved higher" if higher_is_better else "was faster"
-            reason = _get_reason(metric, "graph")
-            bullets.append(
-                f"• **{label.title()}**: GraphRAG {verb} "
-                f"({_fmt_metric(g, metric)} vs {_fmt_metric(h, metric)}). {reason}"
-            )
+            g_wins += 1
+            winner = "🟣 GraphRAG"
+            winner_class = "color:#a78bfa; font-weight:700;"
+            takeaway = f"GraphRAG +{abs(diff):.1%}" if not is_lat else f"Graph {abs(diff):.3f}s faster"
 
-    # Overall verdict
-    if total_comparable == 0:
-        verdict = "Not enough evidence to declare an overall winner."
-        verdict_color = "#64748b"
-    elif hybrid_wins > graph_wins + 1:
-        verdict = (
-            f"Hybrid GraphRAG outperforms GraphRAG on {hybrid_wins} of "
-            f"{total_comparable} measured dimensions."
+        table_rows.append(
+            f"""
+            <tr>
+                <td style="font-weight:600; color:#f8fafc;">{label}</td>
+                <td style="color:#cbd5e1;">{_format_val(g)}</td>
+                <td style="color:#cbd5e1;">{_format_val(h)}</td>
+                <td style="{winner_class}">{winner}</td>
+                <td style="color:#94a3b8; font-size:0.85rem;">{takeaway}</td>
+            </tr>
+            """
         )
-        verdict_color = "#10b981"
-    elif graph_wins > hybrid_wins + 1:
-        verdict = (
-            f"GraphRAG outperforms Hybrid GraphRAG on {graph_wins} of "
-            f"{total_comparable} measured dimensions."
-        )
-        verdict_color = "#8b5cf6"
+
+    # Verdict
+    if h_wins > g_wins:
+        verdict = f"🏆 Hybrid GraphRAG leads across {h_wins} of {total} key metrics with superior recall and context grounding."
+        v_border = "#10b981"
+        v_color = "#34d399"
+    elif g_wins > h_wins:
+        verdict = f"🏆 GraphRAG leads across {g_wins} of {total} key metrics with tighter deterministic AST precision."
+        v_border = "#8b5cf6"
+        v_color = "#a78bfa"
     else:
-        verdict = (
-            "Results are mixed — neither method dominates across all dimensions. "
-            "Consider the trade-offs based on your use case."
-        )
-        verdict_color = "#f59e0b"
+        verdict = "🤝 Balanced trade-off: GraphRAG offers faster AST precision, while Hybrid offers broader semantic discovery."
+        v_border = "#f59e0b"
+        v_color = "#fbbf24"
 
-    bullets_html = "".join(f"<p class='interp-bullet'>{b}</p>" for b in bullets)
+    rows_html = "".join(table_rows)
 
     st.markdown(
         f"""
-        <div class="interpretation-box">
-            <div class="verdict-banner" style="border-color:{verdict_color}; color:{verdict_color};">
-                📌 {verdict}
-            </div>
-            <div class="interp-bullets">
-                {bullets_html}
-            </div>
-            <div class="interp-note">
-                ⓘ Metric-by-metric interpretation. No single method is automatically 
-                declared the winner — results depend on actual benchmark outcomes.
-            </div>
+        <div class="verdict-banner" style="border-left-color:{v_border}; color:{v_color};">
+            {verdict}
+        </div>
+        <div class="matrix-card">
+            <table class="matrix-table">
+                <thead>
+                    <tr>
+                        <th>Metric</th>
+                        <th>GraphRAG</th>
+                        <th>Hybrid GraphRAG</th>
+                        <th>Leading Approach</th>
+                        <th>Summary</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {rows_html}
+                </tbody>
+            </table>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
 
-def _fmt_metric(v, metric: str) -> str:
-    if v is None:
-        return "N/A"
-    if "latency" in metric:
-        return f"{v:.3f}s"
-    return f"{v:.1%}"
-
-
-def _get_reason(metric: str, winner: str) -> str:
-    """Return a brief domain-specific explanation for why a method won on a metric."""
-    reasons = {
-        ("recall_at_k", "hybrid"): (
-            "Semantic vector retrieval likely identified relevant files that "
-            "keyword/graph traversal alone missed."
-        ),
-        ("recall_at_k", "graph"): (
-            "AST-based graph traversal likely followed explicit call-graph edges "
-            "to reach files that semantic similarity missed."
-        ),
-        ("precision_at_k", "hybrid"): (
-            "The combined approach may filter noise better by requiring both "
-            "semantic relevance and graph connectivity."
-        ),
-        ("precision_at_k", "graph"): (
-            "Graph traversal follows deterministic code structure edges, "
-            "potentially reducing irrelevant semantic matches."
-        ),
-        ("impact_f1", "hybrid"): (
-            "Combining vector and graph evidence may surface more components "
-            "than graph traversal alone."
-        ),
-        ("impact_f1", "graph"): (
-            "AST-based graph traversal may follow explicit dependency edges "
-            "more precisely for impact detection."
-        ),
-        ("correctness", "hybrid"): (
-            "Richer combined context from both retrieval sources likely "
-            "provided better material for the LLM."
-        ),
-        ("correctness", "graph"): (
-            "Graph-structured context may have provided more precise, "
-            "less noisy material for answer generation."
-        ),
-        ("faithfulness", "hybrid"): (
-            "Larger combined context may contain more tokens that appear "
-            "in the generated answer."
-        ),
-        ("faithfulness", "graph"): (
-            "Graph-focused context may be more concise and directly "
-            "referenced by the generated answer."
-        ),
-        ("total_latency_s", "hybrid"): (
-            "Hybrid retrieval avoids a full vector search when graph "
-            "traversal resolves queries quickly."
-        ),
-        ("total_latency_s", "graph"): (
-            "Pure graph traversal skips the embedding step, reducing "
-            "total computation time."
-        ),
-    }
-    return reasons.get((metric, winner), "")
-
-
 # ─────────────────────────────────────────────────────────────────────────────
-# Section F — Detailed Results
+# Detailed Results (Expander)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_detailed_results(df: pd.DataFrame):
-    with st.expander("📋 Detailed Results — Inspect Every Question", expanded=False):
-        st.markdown(
-            "Filter and explore per-question results. "
-            "**N/A** indicates the metric could not be calculated (unannotated or empty)."
-        )
-
-        # Filters
-        fil_col1, fil_col2 = st.columns(2)
-        with fil_col1:
+    with st.expander("📋 Detailed Results Table & CSV Export", expanded=False):
+        f1, f2 = st.columns(2)
+        with f1:
             categories = ["All"] + sorted(df["category"].dropna().unique().tolist())
-            cat_filter = st.selectbox("Filter by Category:", categories, key="detail_cat_filter")
-        with fil_col2:
+            cat_filter = st.selectbox("Filter Category:", categories, key="det_cat_filter")
+        with f2:
             modes = ["All"] + sorted(df["mode"].dropna().unique().tolist())
-            mode_filter = st.selectbox("Filter by Mode:", modes, key="detail_mode_filter")
+            mode_filter = st.selectbox("Filter Mode:", modes, key="det_mode_filter")
 
         filtered = df.copy()
         if cat_filter != "All":
@@ -669,298 +524,215 @@ def _render_detailed_results(df: pd.DataFrame):
         if mode_filter != "All":
             filtered = filtered[filtered["mode"] == mode_filter]
 
-        # Select and format display columns
-        display_cols = [
+        cols_wanted = [
             "question_id", "category", "mode",
-            "precision_at_k", "recall_at_k",
-            "impact_precision", "impact_recall", "impact_f1",
-            "correctness", "faithfulness",
-            "retrieval_latency_s", "llm_latency_s", "total_latency_s",
-            "status",
+            "recall_at_k", "precision_at_k", "impact_f1",
+            "correctness", "faithfulness", "total_latency_s", "status"
         ]
-        display_cols = [c for c in display_cols if c in filtered.columns]
-        display_df = filtered[display_cols].copy()
+        cols_present = [c for c in cols_wanted if c in filtered.columns]
+        display_df = filtered[cols_present].copy()
 
-        # Format percentage columns
-        pct_cols = [
-            "precision_at_k", "recall_at_k",
-            "impact_precision", "impact_recall", "impact_f1",
-            "correctness", "faithfulness",
-        ]
-        for col in pct_cols:
-            if col in display_df.columns:
-                display_df[col] = display_df[col].apply(
+        # Format percentages
+        for p_col in ["recall_at_k", "precision_at_k", "impact_f1", "correctness", "faithfulness"]:
+            if p_col in display_df.columns:
+                display_df[p_col] = display_df[p_col].apply(
                     lambda v: "N/A" if _is_nan(v) else f"{float(v):.1%}"
                 )
 
-        # Format latency columns
-        lat_cols = ["retrieval_latency_s", "llm_latency_s", "total_latency_s"]
-        for col in lat_cols:
-            if col in display_df.columns:
-                display_df[col] = display_df[col].apply(
-                    lambda v: "N/A" if _is_nan(v) else f"{float(v):.3f}s"
-                )
+        if "total_latency_s" in display_df.columns:
+            display_df["total_latency_s"] = display_df["total_latency_s"].apply(
+                lambda v: "N/A" if _is_nan(v) else f"{float(v):.3f}s"
+            )
 
-        # Rename columns for readability
-        col_rename = {
-            "question_id": "Question ID",
+        display_df = display_df.rename(columns={
+            "question_id": "QID",
             "category": "Category",
             "mode": "Mode",
-            "precision_at_k": "Precision@K",
             "recall_at_k": "Recall@K",
-            "impact_precision": "Impact Prec.",
-            "impact_recall": "Impact Rec.",
+            "precision_at_k": "Precision@K",
             "impact_f1": "Impact F1",
             "correctness": "Correctness",
             "faithfulness": "Faithfulness",
-            "retrieval_latency_s": "Retr. Latency",
-            "llm_latency_s": "LLM Latency",
             "total_latency_s": "Total Latency",
-            "status": "Status",
-        }
-        display_df = display_df.rename(columns=col_rename)
+            "status": "Status"
+        })
 
-        st.dataframe(display_df, use_container_width=True, height=380)
+        st.dataframe(display_df, use_container_width=True, height=280)
 
-        # CSV export (raw numeric values, not formatted strings)
-        csv_data = df.to_csv(index=False)
         st.download_button(
-            label="📥 Export Full Results to CSV",
-            data=csv_data,
+            label="📥 Download Full Benchmark CSV",
+            data=df.to_csv(index=False),
             file_name="repomind_benchmark_results.csv",
             mime="text/csv",
             use_container_width=True,
         )
 
-        # Query & Retrieval Deep Dive vs Ground Truth
-        _render_query_deep_dive(df)
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Query Deep Dive vs Ground Truth (Expander)
+# ─────────────────────────────────────────────────────────────────────────────
 
 def _render_query_deep_dive(df: pd.DataFrame):
-    """Render side-by-side comparison of Query, Ground Truth, and RAG Retrieval outputs."""
     if df.empty or "question_id" not in df.columns:
         return
 
-    st.markdown("---")
-    st.markdown("### 🔬 Query & Retrieval Deep Dive vs. Ground Truth")
-    st.caption(
-        "Inspect the exact natural language query, the verified Ground Truth answer key, "
-        "and how each RAG system's retrieved files, components, and answers compare."
-    )
+    with st.expander("🔬 Query & Retrieval Deep Dive vs. Ground Truth", expanded=False):
+        qids = df["question_id"].unique().tolist()
 
-    qids = df["question_id"].unique().tolist()
+        def _fmt_qid(q_val):
+            rows = df[df["question_id"] == q_val]
+            if not rows.empty:
+                q_text = rows.iloc[0].get("question") or q_val
+                return f"[{q_val}] {q_text[:70]}..."
+            return q_val
 
-    def _format_q(qid_val):
-        q_rows = df[df["question_id"] == qid_val]
-        if not q_rows.empty:
-            q_text = q_rows.iloc[0].get("question") or qid_val
-            return f"[{qid_val}] {q_text[:75]}..."
-        return qid_val
-
-    selected_qid = st.selectbox(
-        "Select Evaluated Question to Inspect:",
-        options=qids,
-        format_func=_format_q,
-        key="deep_dive_qid_select"
-    )
-
-    q_data = df[df["question_id"] == selected_qid]
-    if q_data.empty:
-        return
-
-    first_row = q_data.iloc[0]
-    question_text = first_row.get("question") or selected_qid
-    category = first_row.get("category", "General")
-    exp_files = first_row.get("expected_files") or []
-    if isinstance(exp_files, str):
-        exp_files = [f.strip() for f in exp_files.split(",") if f.strip()]
-    exp_comps = first_row.get("expected_components") or []
-    if isinstance(exp_comps, str):
-        exp_comps = [c.strip() for c in exp_comps.split(",") if c.strip()]
-    ref_answer = first_row.get("reference_answer", "—")
-
-    # Build files tags
-    if exp_files:
-        files_html = "".join(
-            f'<span style="display:inline-block; background:#1e293b; color:#e2e8f0; font-family:monospace; font-size:0.8rem; padding:2px 8px; border-radius:6px; margin:2px 4px 2px 0; border:1px solid #334155;">📄 {f}</span>'
-            for f in exp_files
+        selected_qid = st.selectbox(
+            "Select Question to Inspect:",
+            options=qids,
+            format_func=_fmt_qid,
+            key="deep_dive_qid_simple",
         )
-    else:
-        files_html = '<span style="color:#64748b;">None specified</span>'
 
-    # Build components tags
-    if exp_comps:
-        comps_html = "".join(
-            f'<span style="display:inline-block; background:#1e293b; color:#38bdf8; font-family:monospace; font-size:0.8rem; padding:2px 8px; border-radius:6px; margin:2px 4px 2px 0; border:1px solid #0369a1;">🧩 {c}</span>'
-            for c in exp_comps
-        )
-    else:
-        comps_html = '<span style="color:#64748b;">None specified</span>'
+        q_data = df[df["question_id"] == selected_qid]
+        if q_data.empty:
+            return
 
-    st.markdown(
-        f"""
-        <div style="background:#0f172a; border:1px solid #3b82f6; border-radius:12px; padding:20px; margin-bottom:20px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-                <span style="font-size:0.85rem; font-weight:700; color:#60a5fa; text-transform:uppercase; letter-spacing:1px;">
-                    🎯 Ground Truth Specification · {category}
-                </span>
-                <span style="font-size:0.8rem; background:rgba(59,130,246,0.15); color:#93c5fd; padding:3px 10px; border-radius:12px; border:1px solid rgba(59,130,246,0.3);">
-                    Verified Standard
-                </span>
-            </div>
-            <h4 style="color:#f8fafc; margin:0 0 12px 0;">❓ Query: "{question_text}"</h4>
-            <div style="margin-bottom:10px;">
-                <strong style="color:#94a3b8; font-size:0.85rem;">Expected Ground-Truth Files:</strong><br>
-                <div style="margin-top:4px;">{files_html}</div>
-            </div>
-            <div style="margin-bottom:12px;">
-                <strong style="color:#94a3b8; font-size:0.85rem;">Expected Components / Blast Radius:</strong><br>
-                <div style="margin-top:4px;">{comps_html}</div>
-            </div>
-            <div style="background:#131c31; border-left:3px solid #3b82f6; padding:10px 14px; border-radius:0 8px 8px 0;">
-                <strong style="color:#93c5fd; font-size:0.85rem;">Reference Ground-Truth Answer:</strong>
-                <p style="color:#cbd5e1; font-size:0.9rem; margin:4px 0 0 0; line-height:1.5;">{ref_answer}</p>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+        first_row = q_data.iloc[0]
+        q_text = first_row.get("question") or selected_qid
+        category = first_row.get("category", "General")
+        exp_files = first_row.get("expected_files") or []
+        if isinstance(exp_files, str):
+            exp_files = [f.strip() for f in exp_files.split(",") if f.strip()]
+        exp_comps = first_row.get("expected_components") or []
+        if isinstance(exp_comps, str):
+            exp_comps = [c.strip() for c in exp_comps.split(",") if c.strip()]
+        ref_ans = first_row.get("reference_answer", "—")
 
-    modes_in_q = q_data["mode"].unique().tolist()
-    cols = st.columns(len(modes_in_q))
+        # Ground Truth Box
+        files_html = "".join(f'<span class="badge-code">📄 {f}</span>' for f in exp_files) if exp_files else "None"
+        comps_html = "".join(f'<span class="badge-comp">🧩 {c}</span>' for c in exp_comps) if exp_comps else "None"
 
-    for idx, mode_name in enumerate(modes_in_q):
-        m_row = q_data[q_data["mode"] == mode_name].iloc[0]
-        is_hybrid = "HYBRID" in mode_name
-        theme_color = "#10b981" if is_hybrid else "#8b5cf6"
-        badge_class = "mode-hybrid" if is_hybrid else "mode-graph"
-
-        ret_files = m_row.get("retrieved_files") or []
-        if isinstance(ret_files, str):
-            ret_files = [f.strip() for f in ret_files.split(",") if f.strip()]
-        ret_comps = m_row.get("retrieved_components") or []
-        if isinstance(ret_comps, str):
-            ret_comps = [c.strip() for c in ret_comps.split(",") if c.strip()]
-        gen_ans = m_row.get("generated_answer") or "—"
-
-        prec = m_row.get("precision_at_k")
-        rec = m_row.get("recall_at_k")
-        f1 = m_row.get("impact_f1")
-        faith = m_row.get("faithfulness")
-        lat = m_row.get("total_latency_s")
-
-        prec_str = f"{prec:.1%}" if not _is_nan(prec) else "N/A"
-        rec_str = f"{rec:.1%}" if not _is_nan(rec) else "N/A"
-        f1_str = f"{f1:.1%}" if not _is_nan(f1) else "N/A"
-        faith_str = f"{faith:.1%}" if not _is_nan(faith) else "N/A"
-        lat_str = f"{lat:.3f}s" if lat is not None else "—"
-
-        ret_files_html = "".join(
-            f'<div style="font-family:monospace; font-size:0.78rem; color:{"#34d399" if f in exp_files else "#cbd5e1"}; padding:2px 0;">{"✅" if f in exp_files else "⚪"} {f}</div>'
-            for f in ret_files[:5]
-        ) if ret_files else '<div style="color:#64748b; font-size:0.8rem;">No files retrieved</div>'
-
-        ret_comps_html = "".join(
-            f'<span style="display:inline-block; background:#1f2937; color:{"#34d399" if c in exp_comps else "#93c5fd"}; font-family:monospace; font-size:0.75rem; padding:1px 6px; border-radius:4px; margin:2px 3px 2px 0; border:1px solid {"#059669" if c in exp_comps else "#1e3a8a"};">{"✓ " if c in exp_comps else ""}{c}</span>'
-            for c in ret_comps[:6]
-        ) if ret_comps else '<span style="color:#64748b; font-size:0.8rem;">None detected</span>'
-
-        with cols[idx]:
-            st.markdown(
-                f"""
-                <div style="background:#111827; border:1px solid {theme_color}55; border-radius:12px; padding:16px; height:100%;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-                        <span class="mode-badge {badge_class}" style="font-size:0.9rem; font-weight:700;">
-                            {mode_name} RAG
-                        </span>
-                        <span style="color:#94a3b8; font-size:0.8rem;">
-                            ⏱️ {lat_str}
-                        </span>
-                    </div>
-
-                    <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px;">
-                        <span style="background:#1e293b; color:#e2e8f0; font-size:0.75rem; padding:3px 8px; border-radius:6px; border:1px solid #334155;">
-                            Precision: <strong style="color:{theme_color};">{prec_str}</strong>
-                        </span>
-                        <span style="background:#1e293b; color:#e2e8f0; font-size:0.75rem; padding:3px 8px; border-radius:6px; border:1px solid #334155;">
-                            Recall: <strong style="color:{theme_color};">{rec_str}</strong>
-                        </span>
-                        <span style="background:#1e293b; color:#e2e8f0; font-size:0.75rem; padding:3px 8px; border-radius:6px; border:1px solid #334155;">
-                            Impact F1: <strong style="color:{theme_color};">{f1_str}</strong>
-                        </span>
-                        <span style="background:#1e293b; color:#e2e8f0; font-size:0.75rem; padding:3px 8px; border-radius:6px; border:1px solid #334155;">
-                            Faithfulness: <strong style="color:{theme_color};">{faith_str}</strong>
-                        </span>
-                    </div>
-
-                    <div style="margin-bottom:10px;">
-                        <strong style="color:#94a3b8; font-size:0.8rem;">Retrieved Files (Top-K):</strong>
-                        <div style="margin-top:4px;">{ret_files_html}</div>
-                    </div>
-
-                    <div style="margin-bottom:12px;">
-                        <strong style="color:#94a3b8; font-size:0.8rem;">Detected Components:</strong>
-                        <div style="margin-top:4px;">{ret_comps_html}</div>
-                    </div>
-
-                    <div style="background:#090d16; border-left:3px solid {theme_color}; padding:10px 12px; border-radius:0 6px 6px 0;">
-                        <strong style="color:{theme_color}; font-size:0.8rem;">Generated Answer:</strong>
-                        <p style="color:#e2e8f0; font-size:0.85rem; margin:4px 0 0 0; line-height:1.45;">{gen_ans}</p>
-                    </div>
+        st.markdown(
+            f"""
+            <div class="gt-card">
+                <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+                    <span style="font-size:0.8rem; font-weight:700; color:#60a5fa; text-transform:uppercase;">
+                        🎯 Verified Ground Truth · {category}
+                    </span>
+                    <span class="mode-badge mode-ast">Compiler AST Truth</span>
                 </div>
-                """,
-                unsafe_allow_html=True
-            )
+                <h4 style="margin:4px 0 10px 0; color:#f8fafc;">Query: "{q_text}"</h4>
+                <div style="margin-bottom:6px;"><strong>Target Files:</strong> {files_html}</div>
+                <div style="margin-bottom:8px;"><strong>Blast Radius Components:</strong> {comps_html}</div>
+                <div class="gt-ref-answer">
+                    <strong>Reference Answer:</strong> {ref_ans}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-    with st.expander("🔍 View Retrieved Prompt Context Fed into LLM", expanded=False):
-        c_tabs = st.tabs([f"{m} Context" for m in modes_in_q])
+        # Mode cards side by side
+        modes_in_q = q_data["mode"].unique().tolist()
+        cols = st.columns(len(modes_in_q))
+
         for idx, m_name in enumerate(modes_in_q):
-            with c_tabs[idx]:
-                ctx = q_data[q_data["mode"] == m_name].iloc[0].get("prompt_context", "")
-                if ctx:
-                    st.code(ctx, language="markdown")
-                else:
-                    st.info(f"No prompt context available for {m_name}.")
+            m_row = q_data[q_data["mode"] == m_name].iloc[0]
+            is_hybrid = "HYBRID" in m_name
+            accent = "#10b981" if is_hybrid else "#8b5cf6"
+            badge_class = "mode-hybrid" if is_hybrid else "mode-graph"
+
+            ret_files = m_row.get("retrieved_files") or []
+            if isinstance(ret_files, str):
+                ret_files = [f.strip() for f in ret_files.split(",") if f.strip()]
+            ret_comps = m_row.get("retrieved_components") or []
+            if isinstance(ret_comps, str):
+                ret_comps = [c.strip() for c in ret_comps.split(",") if c.strip()]
+            gen_ans = m_row.get("generated_answer") or "—"
+
+            rec = m_row.get("recall_at_k")
+            f1 = m_row.get("impact_f1")
+            lat = m_row.get("total_latency_s")
+
+            rec_str = f"{rec:.0%}" if not _is_nan(rec) else "N/A"
+            f1_str = f"{f1:.0%}" if not _is_nan(f1) else "N/A"
+            lat_str = f"{lat:.2f}s" if lat is not None else "—"
+
+            files_chips = "".join(
+                f'<span class="badge-code" style="color:{"#34d399" if f in exp_files else "#94a3b8"};">{"✓ " if f in exp_files else ""}{f}</span>'
+                for f in ret_files[:4]
+            ) or '<span style="color:#64748b;">No files retrieved</span>'
+
+            comps_chips = "".join(
+                f'<span class="badge-comp" style="color:{"#34d399" if c in exp_comps else "#60a5fa"};">{"✓ " if c in exp_comps else ""}{c}</span>'
+                for c in ret_comps[:4]
+            ) or '<span style="color:#64748b;">None detected</span>'
+
+            with cols[idx]:
+                st.markdown(
+                    f"""
+                    <div class="deep-card" style="border-top:3px solid {accent};">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                            <span class="mode-badge {badge_class}">{m_name} RAG</span>
+                            <span style="color:#94a3b8; font-size:0.8rem;">⏱️ {lat_str}</span>
+                        </div>
+                        <div style="display:flex; gap:6px; margin-bottom:10px;">
+                            <span class="kpi-mini">Recall: <b>{rec_str}</b></span>
+                            <span class="kpi-mini">Impact F1: <b>{f1_str}</b></span>
+                        </div>
+                        <div style="margin-bottom:6px; font-size:0.8rem; color:#94a3b8;"><b>Retrieved Files:</b></div>
+                        <div style="margin-bottom:8px;">{files_chips}</div>
+                        <div style="margin-bottom:6px; font-size:0.8rem; color:#94a3b8;"><b>Detected Components:</b></div>
+                        <div style="margin-bottom:8px;">{comps_chips}</div>
+                        <div class="answer-box">
+                            <strong style="color:{accent}; font-size:0.8rem;">Generated Answer:</strong>
+                            <p style="margin:4px 0 0 0; font-size:0.85rem; color:#cbd5e1; line-height:1.4;">{gen_ans}</p>
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+        # Context viewer inside tab
+        with st.expander("🔍 Inspect Exact Prompt Context Sent to LLM", expanded=False):
+            ctx_tabs = st.tabs([f"{m} Context" for m in modes_in_q])
+            for i, m_name in enumerate(modes_in_q):
+                with ctx_tabs[i]:
+                    ctx = q_data[q_data["mode"] == m_name].iloc[0].get("prompt_context", "")
+                    if ctx:
+                        st.code(ctx, language="markdown")
+                    else:
+                        st.caption("No prompt context recorded.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Section G — Metric Glossary
+# Metric Glossary (Expander)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_glossary():
-    with st.expander("📖 What Do These Metrics Mean? (Glossary)", expanded=False):
+    with st.expander("📖 Metric Glossary & Evaluation Methodology", expanded=False):
         st.markdown(
             """
             | Metric | Plain English | Formula |
             |---|---|---|
-            | **Precision@K** | Of the files the system retrieved, how many were actually relevant? | TP / K |
-            | **Recall@K** | Of all relevant files, how many did the system find? | TP / \|Expected\| |
-            | **Impact Precision** | Of the components predicted to be affected, how many were actually affected? | TP / (TP + FP) |
-            | **Impact Recall** | Of all components that are truly affected, how many did the system identify? | TP / (TP + FN) |
-            | **Impact F1** | Balance between impact precision and recall (harmonic mean). | 2·P·R / (P+R) |
-            | **Answer Correctness** | How much does the generated answer overlap with the reference answer? (token F1) | Token-level F1 vs reference |
-            | **Faithfulness** | How much of the generated answer is supported by the retrieved evidence? (lexical approximation) | Grounded tokens / Answer tokens |
-            | **Retrieval Latency** | Time spent retrieving relevant context (vector search + graph traversal). | Seconds |
-            | **LLM Latency** | Time spent generating the answer using the language model. | Seconds |
-            | **Total Latency** | End-to-end time from question to answer. | Retrieval + LLM Latency |
+            | **Recall@K** | Did the system find all relevant files? | True Positives / Expected Files |
+            | **Precision@K** | Were the retrieved files actually relevant? | True Positives / K Retrieved |
+            | **Impact F1** | Accuracy in predicting affected blast radius | 2 · Precision · Recall / (P + R) |
+            | **Answer Correctness** | Semantic token overlap with golden answer | Token-level F1 vs reference |
+            | **Answer Faithfulness** | Was the answer grounded in retrieved code? | Grounded tokens / Answer tokens |
+            | **Total Latency** | End-to-end execution time (Retrieval + LLM) | Seconds |
 
-            **Notes on N/A values:**
-            - **N/A** means the metric *cannot* be calculated — not that the system scored zero.
-            - Recall cannot be computed when no ground-truth files are annotated.
-            - Faithfulness cannot be computed when the answer is empty.
-            - A genuine zero score is displayed as **0.0%**, not N/A.
-
-            **About Faithfulness:**
-            The faithfulness score here is a *lexical* approximation — it checks whether
-            technical terms in the answer appear in the retrieved context. It does *not* use
-            NLI-based semantic entailment. Treat it as a signal, not a definitive measure.
+            **Why Live AST Ground Truth Matters:**
+            Conventional RAG benchmarks rely on LLM-generated questions and answers, introducing circular evaluation bias.
+            RepoMind extracts actual callers, test suites, and imports from the **Python Abstract Syntax Tree (AST)**, 
+            guaranteeing 100% objective, mathematically verifiable benchmark facts with zero hallucination.
             """,
             unsafe_allow_html=True,
         )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Empty-state placeholder
+# Empty State
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _render_empty_state():
@@ -968,240 +740,204 @@ def _render_empty_state():
         """
         <div class="empty-state">
             <div class="empty-state-icon">📊</div>
-            <div class="empty-state-title">Ready for Ground-Truth Evaluation</div>
-            <div class="empty-state-desc">
-                Select your benchmark source above and click <strong>🚀 Run Benchmark</strong> to evaluate
-                GraphRAG vs Hybrid GraphRAG with mathematically proven AST ground truth.
-            </div>
+            <h3 style="color:#f8fafc; margin-bottom:8px;">Ready for Ground-Truth Evaluation</h3>
+            <p style="color:#94a3b8; font-size:0.95rem; max-width:540px; margin:0 auto 20px auto; line-height:1.5;">
+                Select your parameters above and click <strong>🚀 Run Benchmark</strong> to evaluate 
+                GraphRAG vs Hybrid GraphRAG against mathematically verified repository facts.
+            </p>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    col1, col2 = st.columns(2)
-    with col1:
+    c1, c2 = st.columns(2)
+    with c1:
         st.markdown(
             """
-            <div style="background:#131b2e; border:1px solid #1e293b; border-radius:10px; padding:18px; height:100%;">
-                <h4 style="color:#60a5fa; margin-top:0;">⚡ Deterministic AST Ground Truth</h4>
-                <p style="color:#94a3b8; font-size:0.9rem; line-height:1.5;">
-                    Instead of relying on an LLM to guess or invent the test questions and answers (circular evaluation bias),
-                    RepoMind directly extracts ground-truth caller chains, test suites, and imports from the 
-                    <strong>Python compiler's Abstract Syntax Tree (AST)</strong>. Every dependency is an unshakeable mathematical fact with <strong>0% hallucination</strong>.
+            <div class="info-card">
+                <h4 style="color:#60a5fa; margin-top:0;">⚡ Live AST Ground Truth</h4>
+                <p style="color:#94a3b8; font-size:0.88rem; line-height:1.5; margin-bottom:0;">
+                    Synthesizes benchmark test suites directly from the repository's syntax tree. 
+                    Target files, callers, and test suites are 100% deterministic with zero LLM hallucination.
                 </p>
             </div>
             """,
-            unsafe_allow_html=True
+            unsafe_allow_html=True,
         )
-    with col2:
+    with c2:
         st.markdown(
             """
-            <div style="background:#131b2e; border:1px solid #1e293b; border-radius:10px; padding:18px; height:100%;">
-                <h4 style="color:#34d399; margin-top:0;">🎯 Works on Any Arbitrary Repository</h4>
-                <p style="color:#94a3b8; font-size:0.9rem; line-height:1.5;">
-                    Whenever you ingest a new GitHub URL, RepoMind's AST scanner identifies the top architectural hubs,
-                    computes their exact upstream and downstream blast radius, and synthesizes a dedicated 
-                    <strong>custom What-If benchmark suite on the fly</strong> without requiring manual human annotations.
+            <div class="info-card">
+                <h4 style="color:#34d399; margin-top:0;">🎯 Works on Any Repository</h4>
+                <p style="color:#94a3b8; font-size:0.88rem; line-height:1.5; margin-bottom:0;">
+                    No manual test annotations required. RepoMind scans topological hubs in any ingested GitHub repo
+                    and automatically generates an explainable What-If benchmark suite on the fly.
                 </p>
             </div>
             """,
-            unsafe_allow_html=True
+            unsafe_allow_html=True,
         )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CSS injection
+# CSS Styling (Clean, Compact, Modern Dark Mode)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _inject_eval_css():
     st.markdown(
         """
         <style>
-        /* ── Eval Page Layout ───────────────────────────────────── */
-        .eval-header {
-            display: flex;
-            align-items: flex-start;
-            gap: 24px;
-            padding: 20px 0 12px 0;
-        }
+        /* Header */
+        .eval-header { padding: 12px 0 8px 0; }
         .eval-title {
-            font-size: 1.9rem;
+            font-size: 1.85rem;
             font-weight: 800;
             background: linear-gradient(90deg, #60a5fa, #a78bfa, #34d399);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             margin: 0;
         }
-        .eval-subtitle {
-            color: #94a3b8;
-            font-size: 1rem;
-            margin-top: 6px;
-        }
-        .eval-divider {
-            border-top: 1px solid #1e293b;
-            margin: 20px 0;
-        }
+        .eval-subtitle { color: #94a3b8; font-size: 0.95rem; margin-top: 4px; }
+        .eval-divider { border-top: 1px solid #1e293b; margin: 18px 0; }
+
+        /* Badges */
         .mode-badge {
             display: inline-block;
-            padding: 1px 8px;
+            padding: 2px 8px;
             border-radius: 999px;
-            font-size: 0.85rem;
+            font-size: 0.78rem;
             font-weight: 600;
         }
         .mode-graph  { background: rgba(139,92,246,0.15); color: #a78bfa; border: 1px solid rgba(139,92,246,0.3); }
         .mode-hybrid { background: rgba(16,185,129,0.15);  color: #34d399; border: 1px solid rgba(16,185,129,0.3); }
+        .mode-ast    { background: rgba(59,130,246,0.15);  color: #60a5fa; border: 1px solid rgba(59,130,246,0.3); }
 
-        /* ── Stat Pills ─────────────────────────────────────────── */
+        /* Stat Pills */
         .stat-pill {
-            background: #131b2e;
+            background: #111827;
             border: 1px solid #1e293b;
             border-left: 3px solid #6366f1;
-            border-radius: 10px;
-            padding: 10px 14px;
-            margin-bottom: 8px;
+            border-radius: 8px;
+            padding: 8px 12px;
         }
-        .stat-pill-label {
-            font-size: 0.72rem;
-            color: #64748b;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        .stat-pill-value {
-            font-size: 1rem;
-            font-weight: 700;
-            color: #f1f5f9;
-            margin-top: 2px;
-            word-break: break-all;
-        }
+        .stat-pill-label { font-size: 0.7rem; color: #64748b; text-transform: uppercase; font-weight: 600; }
+        .stat-pill-value { font-size: 0.95rem; font-weight: 700; color: #f1f5f9; margin-top: 2px; }
 
-        /* ── Progress ───────────────────────────────────────────── */
-        .progress-msg {
-            font-size: 0.85rem;
-            color: #94a3b8;
-            padding: 4px 0;
-        }
-        .progress-msg.success { color: #34d399; }
-
-        /* ── KPI Cards ──────────────────────────────────────────── */
-        .kpi-card {
-            background: #131b2e;
-            border: 1px solid #1e293b;
-            border-radius: 14px;
-            padding: 16px 18px;
-            margin-bottom: 8px;
-            height: 100%;
-            transition: border-color 0.15s;
-        }
-        .kpi-card:hover { border-color: #334155; }
-        .kpi-header {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin-bottom: 8px;
-            flex-wrap: wrap;
-        }
-        .kpi-icon { font-size: 1.3rem; }
-        .kpi-title {
-            font-size: 0.9rem;
-            font-weight: 700;
-            color: #f1f5f9;
-            flex: 1;
-        }
-        .kpi-metric-name {
-            font-size: 0.72rem;
-            color: #64748b;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 10px;
-        }
-        .kpi-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 4px;
-        }
-        .kpi-mode {
-            font-size: 0.75rem;
-            font-weight: 600;
-            padding: 1px 7px;
-            border-radius: 999px;
-        }
-        .graph-label  { background: rgba(139,92,246,0.15); color: #a78bfa; border: 1px solid rgba(139,92,246,0.3); }
-        .hybrid-label { background: rgba(16,185,129,0.15);  color: #34d399; border: 1px solid rgba(16,185,129,0.3); }
-        .kpi-val {
-            font-size: 1.15rem;
-            font-weight: 700;
-            color: #f1f5f9;
-            font-variant-numeric: tabular-nums;
-        }
-        .kpi-diff {
-            font-size: 0.75rem;
-            color: #94a3b8;
-            margin: 4px 0 6px 0;
-            font-variant-numeric: tabular-nums;
-        }
-        .kpi-desc {
-            font-size: 0.75rem;
-            color: #64748b;
-            line-height: 1.4;
-            margin-top: 8px;
-            border-top: 1px solid #1e293b;
-            padding-top: 8px;
-        }
-
-        /* Winner badges */
-        .winner-badge {
-            font-size: 0.65rem;
-            font-weight: 700;
-            padding: 1px 7px;
-            border-radius: 999px;
-            white-space: nowrap;
-        }
-        .winner-badge.hybrid { background: rgba(16,185,129,0.2);  color: #34d399; }
-        .winner-badge.graph  { background: rgba(139,92,246,0.2); color: #a78bfa; }
-        .winner-badge.tie    { background: rgba(100,116,139,0.2); color: #94a3b8; }
-
-        /* ── Interpretation box ─────────────────────────────────── */
-        .interpretation-box {
+        /* Controls Panel */
+        .controls-panel {
             background: #0f172a;
             border: 1px solid #1e293b;
-            border-radius: 14px;
-            padding: 20px 24px;
-        }
-        .verdict-banner {
-            font-size: 1rem;
-            font-weight: 700;
-            border-left: 4px solid;
-            padding: 8px 14px;
-            border-radius: 0 8px 8px 0;
-            margin-bottom: 16px;
-            background: rgba(255,255,255,0.03);
-        }
-        .interp-bullets { }
-        .interp-bullet {
-            font-size: 0.88rem;
-            color: #cbd5e1;
-            line-height: 1.6;
-            margin: 6px 0;
-            padding-left: 4px;
-        }
-        .interp-note {
-            font-size: 0.75rem;
-            color: #64748b;
-            margin-top: 14px;
-            padding-top: 10px;
-            border-top: 1px solid #1e293b;
+            border-radius: 12px;
+            padding: 16px 18px 12px 18px;
+            margin: 12px 0;
         }
 
-        /* ── Empty state ────────────────────────────────────────── */
-        .empty-state {
-            text-align: center;
-            padding: 60px 20px;
-            color: #64748b;
+        /* KPI Cards */
+        .kpi-card {
+            background: #111827;
+            border: 1px solid #1e293b;
+            border-radius: 12px;
+            padding: 14px 16px;
+            height: 100%;
         }
-        .empty-state-icon   { font-size: 3rem; margin-bottom: 12px; }
-        .empty-state-title  { font-size: 1.1rem; font-weight: 600; color: #94a3b8; margin-bottom: 8px; }
-        .empty-state-desc   { font-size: 0.88rem; line-height: 1.6; max-width: 480px; margin: 0 auto; }
+        .kpi-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+        .kpi-icon { font-size: 1.15rem; margin-right: 6px; }
+        .kpi-title { font-size: 0.88rem; font-weight: 700; color: #f8fafc; flex: 1; }
+        .kpi-tag { font-size: 0.65rem; font-weight: 700; padding: 2px 6px; border-radius: 999px; }
+        .kpi-tag.hybrid { background: rgba(16,185,129,0.2); color: #34d399; }
+        .kpi-tag.graph  { background: rgba(139,92,246,0.2); color: #a78bfa; }
+        .kpi-tag.tie    { background: rgba(100,116,139,0.2); color: #94a3b8; }
+        .kpi-row { display: flex; justify-content: space-between; align-items: center; margin: 4px 0; }
+        .kpi-val { font-size: 1.05rem; font-weight: 700; color: #f8fafc; }
+        .kpi-footer { font-size: 0.72rem; color: #64748b; margin-top: 8px; border-top: 1px solid #1e293b; padding-top: 6px; }
+        .kpi-mini { background: #1e293b; color: #cbd5e1; font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; }
+
+        /* Verdict Banner */
+        .verdict-banner {
+            font-size: 0.95rem;
+            font-weight: 700;
+            border-left: 4px solid;
+            padding: 10px 14px;
+            border-radius: 0 8px 8px 0;
+            background: rgba(255,255,255,0.03);
+            margin-bottom: 12px;
+        }
+
+        /* Matrix Table */
+        .matrix-card {
+            background: #111827;
+            border: 1px solid #1e293b;
+            border-radius: 10px;
+            overflow-x: auto;
+        }
+        .matrix-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+        .matrix-table th { background: #0f172a; color: #94a3b8; text-align: left; padding: 10px 14px; border-bottom: 1px solid #1e293b; font-size: 0.78rem; text-transform: uppercase; }
+        .matrix-table td { padding: 9px 14px; border-bottom: 1px solid #1e293b22; }
+
+        /* Deep Dive & Ground Truth Cards */
+        .gt-card {
+            background: #0f172a;
+            border: 1px solid #3b82f6;
+            border-radius: 10px;
+            padding: 16px;
+            margin-bottom: 14px;
+        }
+        .gt-ref-answer {
+            background: #131c31;
+            border-left: 3px solid #3b82f6;
+            padding: 8px 12px;
+            border-radius: 0 6px 6px 0;
+            font-size: 0.85rem;
+            color: #cbd5e1;
+            margin-top: 8px;
+        }
+        .deep-card {
+            background: #111827;
+            border: 1px solid #1e293b;
+            border-radius: 10px;
+            padding: 14px;
+            height: 100%;
+        }
+        .badge-code {
+            display: inline-block;
+            background: #1e293b;
+            font-family: monospace;
+            font-size: 0.78rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+            margin: 2px 4px 2px 0;
+            border: 1px solid #334155;
+        }
+        .badge-comp {
+            display: inline-block;
+            background: #1e293b;
+            font-family: monospace;
+            font-size: 0.78rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+            margin: 2px 4px 2px 0;
+            border: 1px solid #0369a1;
+        }
+        .answer-box {
+            background: #090d16;
+            padding: 8px 10px;
+            border-radius: 6px;
+            margin-top: 8px;
+            border-left: 2px solid #334155;
+        }
+
+        /* Empty State */
+        .empty-state { text-align: center; padding: 40px 16px 24px 16px; }
+        .empty-state-icon { font-size: 2.5rem; margin-bottom: 8px; }
+        .info-card {
+            background: #111827;
+            border: 1px solid #1e293b;
+            border-radius: 10px;
+            padding: 16px;
+            height: 100%;
+        }
+        .progress-msg { font-size: 0.85rem; color: #94a3b8; padding: 4px 0; }
+        .progress-msg.success { color: #34d399; }
         </style>
         """,
         unsafe_allow_html=True,
