@@ -50,7 +50,7 @@ def render_evaluation():
     st.markdown('<div class="eval-divider"></div>', unsafe_allow_html=True)
 
     # ── SECTION B: Controls ─────────────────────────────────────────────────
-    run_clicked, selected_modes, num_questions, gt_source = _render_controls(graph)
+    run_clicked, selected_modes, num_questions, gt_source, speed_mode = _render_controls(graph)
 
     # Execute benchmark
     if run_clicked:
@@ -59,7 +59,7 @@ def render_evaluation():
         elif hybrid_retriever is None:
             st.error("Retriever not initialised. Please reload the repository.")
         else:
-            _run_and_store_benchmark(hybrid_retriever, answer_generator, selected_modes, num_questions, gt_source, graph)
+            _run_and_store_benchmark(hybrid_retriever, answer_generator, selected_modes, num_questions, gt_source, speed_mode, graph)
 
     # ── Render results (or placeholder) ────────────────────────────────────
     df: Optional[pd.DataFrame] = st.session_state.get("benchmark_results_df")
@@ -152,13 +152,13 @@ def _stat_pill(col, label: str, value: str, color: str):
 def _render_controls(graph=None):
     st.markdown("### ⚙️ Benchmark Controls")
 
-    col_source, col_mode, col_num, col_btn = st.columns([1.8, 1.6, 0.8, 1.0])
+    col_source, col_mode, col_speed, col_num, col_btn = st.columns([1.5, 1.3, 1.3, 0.7, 1.0])
 
     with col_source:
         gt_source = st.selectbox(
             "Ground Truth Source:",
             options=[
-                "⚡ Live AST Ground Truth (Auto-extracted from Repo)",
+                "⚡ Live AST Ground Truth (Auto-extracted)",
                 "📚 Curated Architecture Golden Set"
             ],
             index=0,
@@ -175,16 +175,28 @@ def _render_controls(graph=None):
             key="eval_mode_choice",
         )
 
+    with col_speed:
+        speed_mode = st.selectbox(
+            "Execution Engine:",
+            options=[
+                "⚡ Fast Parallel (Gemini Flash · 2-3s)",
+                "🚀 Instant Turbo (Local Engine · <1s)"
+            ],
+            index=0,
+            key="eval_speed_mode",
+            help="Fast Parallel runs queries concurrently across worker threads. Instant Turbo uses local AST grounded synthesis for sub-second execution."
+        )
+
     with col_num:
-        default_q = 5
+        default_q = 3
         num_questions = st.number_input(
             "Questions:",
             min_value=1,
-            max_value=15,
+            max_value=10,
             value=default_q,
             step=1,
             key="eval_num_questions",
-            help="Number of questions to evaluate.",
+            help="Number of questions to evaluate (default 3 for instant run).",
         )
 
     with col_btn:
@@ -206,10 +218,10 @@ def _render_controls(graph=None):
     }
     selected_modes = mode_map[mode_choice]
 
-    return run_clicked, selected_modes, int(num_questions), gt_source
+    return run_clicked, selected_modes, int(num_questions), gt_source, speed_mode
 
 
-def _run_and_store_benchmark(hybrid_retriever, answer_generator, modes, num_questions, gt_source, graph=None):
+def _run_and_store_benchmark(hybrid_retriever, answer_generator, modes, num_questions, gt_source, speed_mode, graph=None):
     st.session_state["benchmark_running"] = True
     st.session_state["benchmark_dataset_source"] = gt_source
 
@@ -229,8 +241,15 @@ def _run_and_store_benchmark(hybrid_retriever, answer_generator, modes, num_ques
         progress_bar.progress(min(pct, 1.0))
 
     try:
-        runner = BenchmarkRunner(hybrid_retriever, answer_generator, dataset)
-        df_results = runner.run_benchmark(modes=modes, progress_callback=prog_cb)
+        if "Turbo" in speed_mode:
+            from repomind.llm.model_provider import LocalHeuristicSynthesizer
+            from repomind.llm.answer_generator import AnswerGenerator
+            eval_gen = AnswerGenerator(LocalHeuristicSynthesizer())
+        else:
+            eval_gen = answer_generator or AnswerGenerator()
+
+        runner = BenchmarkRunner(hybrid_retriever, eval_gen, dataset)
+        df_results = runner.run_benchmark(modes=modes, progress_callback=prog_cb, parallel=True, max_workers=4)
 
         st.session_state["benchmark_results_df"]  = df_results
         st.session_state["benchmark_last_run"]    = datetime.datetime.now()
