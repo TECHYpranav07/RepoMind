@@ -29,19 +29,45 @@ def render_repository_explorer():
         st.markdown("### 🌐 Software Architecture Knowledge Graph")
         st.write("Drag, zoom, and explore component dependencies, class hierarchies, function calls, and import bindings.")
 
-        # Entity type filter
-        available_types = list(stats.get("node_type_breakdown", {}).keys())
-        selected_types = st.multiselect(
-            "Filter Visible Entity Types:",
-            options=available_types,
-            default=available_types[:6] if len(available_types) >= 6 else available_types,
-            help="Filter which nodes appear in the physics graph."
-        )
+        # Controls row above graph
+        col_f1, col_f2, col_f3 = st.columns([2.2, 1.2, 1.1])
+        with col_f1:
+            available_types = list(stats.get("node_type_breakdown", {}).keys())
+            selected_types = st.multiselect(
+                "Filter Visible Entity Types:",
+                options=available_types,
+                default=available_types[:6] if len(available_types) >= 6 else available_types,
+                help="Filter which nodes appear in the physics graph."
+            )
+        with col_f2:
+            physics_choice = st.selectbox(
+                "Movement Dynamics:",
+                options=["⚡ Jiggly & Springy", "🌊 Floating & Drifting", "⚓ Calm & Settled"],
+                index=0,
+                help="Control the elasticity and movement of graph nodes. Jiggly makes nodes bounce elastically!"
+            )
+        with col_f3:
+            spacing = st.slider(
+                "Spring Spacing:",
+                min_value=70,
+                max_value=220,
+                value=120,
+                step=10,
+                help="Adjust the distance between connected nodes."
+            )
+
+        preset_key = "jiggly"
+        if "Floating" in physics_choice:
+            preset_key = "floating"
+        elif "Calm" in physics_choice:
+            preset_key = "calm"
 
         html_graph = GraphVisualizer.render_pyvis_html(
             graph,
             height="580px",
-            selected_node_types=selected_types
+            selected_node_types=selected_types,
+            physics_preset=preset_key,
+            spring_length=spacing
         )
         components.html(html_graph, height=600, scrolling=False)
 

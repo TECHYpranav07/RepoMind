@@ -1,4 +1,5 @@
 """Interactive Knowledge Graph visualizer using PyVis and Plotly."""
+import json
 import os
 import tempfile
 from typing import Dict, Any, List, Optional, Set
@@ -52,9 +53,11 @@ class GraphVisualizer:
         target_ids: Optional[Set[str]] = None,
         direct_ids: Optional[Set[str]] = None,
         inferred_ids: Optional[Set[str]] = None,
-        selected_node_types: Optional[List[str]] = None
+        selected_node_types: Optional[List[str]] = None,
+        physics_preset: str = "jiggly",
+        spring_length: int = 120
     ) -> str:
-        """Generate interactive self-contained PyVis HTML string."""
+        """Generate interactive self-contained PyVis HTML string with elastic jiggly physics."""
         if not PYVIS_AVAILABLE or graph.number_of_nodes() == 0:
             return "<div style='color:#94a3b8; padding:20px; text-align:center;'>No graph nodes available to display.</div>"
 
@@ -63,7 +66,113 @@ class GraphVisualizer:
         inferred_ids = inferred_ids or set()
 
         net = Network(height=height, width="100%", directed=True, bgcolor="#0f172a", font_color="#e2e8f0")
-        net.barnes_hut(gravity=-3000, central_gravity=0.3, spring_length=95, spring_strength=0.05, damping=0.9)
+
+        # Configure lively, elastic "jiggly" physics presets
+        if physics_preset == "floating":
+            # Continuous subtle drifting/breathing movement
+            physics_config = {
+                "barnesHut": {
+                    "gravitationalConstant": -3200,
+                    "centralGravity": 0.15,
+                    "springLength": max(spring_length, 80),
+                    "springConstant": 0.035,
+                    "damping": 0.08,
+                    "avoidOverlap": 0.25
+                },
+                "maxVelocity": 25,
+                "minVelocity": 0.01,
+                "timestep": 0.45,
+                "stabilization": {
+                    "enabled": True,
+                    "iterations": 30,
+                    "updateInterval": 10
+                }
+            }
+        elif physics_preset == "calm":
+            # Quick settling, calm layout
+            physics_config = {
+                "barnesHut": {
+                    "gravitationalConstant": -3500,
+                    "centralGravity": 0.3,
+                    "springLength": max(spring_length, 80),
+                    "springConstant": 0.05,
+                    "damping": 0.75,
+                    "avoidOverlap": 0.2
+                },
+                "maxVelocity": 30,
+                "minVelocity": 0.5,
+                "timestep": 0.5,
+                "stabilization": {
+                    "enabled": True,
+                    "iterations": 120
+                }
+            }
+        else:
+            # Default "jiggly": Organic elastic bouncing, reactive springs, interactive oscillation
+            physics_config = {
+                "barnesHut": {
+                    "gravitationalConstant": -4200,
+                    "centralGravity": 0.18,
+                    "springLength": max(spring_length, 90),
+                    "springConstant": 0.055,
+                    "damping": 0.12,
+                    "avoidOverlap": 0.28
+                },
+                "maxVelocity": 38,
+                "minVelocity": 0.06,
+                "timestep": 0.5,
+                "stabilization": {
+                    "enabled": True,
+                    "iterations": 45,
+                    "updateInterval": 10,
+                    "fit": True
+                }
+            }
+
+        pyvis_options = {
+            "physics": physics_config,
+            "interaction": {
+                "hover": True,
+                "hoverConnectedEdges": True,
+                "selectConnectedEdges": True,
+                "navigationButtons": True,
+                "keyboard": True,
+                "multiselect": True,
+                "zoomView": True,
+                "dragNodes": True,
+                "dragView": True,
+                "tooltipDelay": 80
+            },
+            "nodes": {
+                "shadow": {
+                    "enabled": True,
+                    "color": "rgba(0,0,0,0.45)",
+                    "size": 8,
+                    "x": 2,
+                    "y": 2
+                }
+            },
+            "edges": {
+                "smooth": {
+                    "type": "dynamic",
+                    "roundness": 0.5
+                },
+                "hoverWidth": 2.5,
+                "selectionWidth": 3.0
+            }
+        }
+
+        try:
+            net.set_options(json.dumps(pyvis_options))
+        except Exception:
+            # Fallback to standard PyVis barnes_hut call if set_options fails
+            net.barnes_hut(
+                gravity=-4000,
+                central_gravity=0.2,
+                spring_length=spring_length,
+                spring_strength=0.05,
+                damping=0.15
+            )
 
         # Filter nodes if filter requested
         nodes_to_render = []

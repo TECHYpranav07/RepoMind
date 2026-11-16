@@ -134,7 +134,9 @@ def _render_whatif_results(res: dict, full_graph):
                 height="550px",
                 target_ids=target_ids,
                 direct_ids=direct_ids,
-                inferred_ids=inferred_ids
+                inferred_ids=inferred_ids,
+                physics_preset="jiggly",
+                spring_length=130
             )
             components.html(html_sub, height=570, scrolling=False)
         else:
