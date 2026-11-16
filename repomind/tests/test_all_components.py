@@ -293,6 +293,33 @@ def test_pyvis_in_memory_html():
     assert len(html) > 50
 
 
+def test_ast_ground_truth_dataset_synthesis():
+    """Verify that deterministic ground truth is automatically generated from AST."""
+    from repomind.evaluation.dataset import generate_ast_ground_truth_dataset
+    
+    g = nx.DiGraph()
+    # Add a target class
+    g.add_node("auth_service", name="AuthService", type="Class", file_path="auth.py", line_number=10)
+    # Add caller function
+    g.add_node("login_handler", name="login_handler", type="Function", file_path="api.py", line_number=25)
+    g.add_edge("login_handler", "auth_service", relation="CALLS")
+    # Add test case
+    g.add_node("test_login", name="test_login_success", type="Test", file_path="test_auth.py", line_number=5)
+    g.add_edge("test_login", "auth_service", relation="TESTS")
+
+    gt_items = generate_ast_ground_truth_dataset(g, max_questions=3)
+    assert len(gt_items) > 0
+    item = gt_items[0]
+    assert "AuthService" in item["question"]
+    assert "auth.py" in item["expected_files"]
+    assert "api.py" in item["expected_files"]
+    assert "test_auth.py" in item["expected_files"]
+    assert "AuthService" in item["expected_components"]
+    assert "login_handler" in item["expected_components"]
+    assert item["is_ast_ground_truth"] is True
+    assert len(item["reference_answer"]) > 20
+
+
 if __name__ == "__main__":
     tests = [
         test_url_parser,
@@ -305,7 +332,8 @@ if __name__ == "__main__":
         test_whatif_end_to_end_report,
         test_context_builder_unique_citations,
         test_evaluation_metrics_and_benchmark,
-        test_pyvis_in_memory_html
+        test_pyvis_in_memory_html,
+        test_ast_ground_truth_dataset_synthesis
     ]
     failed = 0
     for t in tests:

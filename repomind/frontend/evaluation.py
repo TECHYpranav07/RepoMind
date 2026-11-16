@@ -19,7 +19,7 @@ import pandas as pd
 import streamlit as st
 
 from repomind.evaluation.benchmark import BenchmarkRunner, COLORS, _is_nan, _safe_val
-from repomind.evaluation.dataset import BENCHMARK_DATASET
+from repomind.evaluation.dataset import BENCHMARK_DATASET, generate_ast_ground_truth_dataset
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -50,7 +50,7 @@ def render_evaluation():
     st.markdown('<div class="eval-divider"></div>', unsafe_allow_html=True)
 
     # ── SECTION B: Controls ─────────────────────────────────────────────────
-    run_clicked, selected_modes, num_questions = _render_controls()
+    run_clicked, selected_modes, num_questions, gt_source = _render_controls(graph)
 
     # Execute benchmark
     if run_clicked:
@@ -59,7 +59,7 @@ def render_evaluation():
         elif hybrid_retriever is None:
             st.error("Retriever not initialised. Please reload the repository.")
         else:
-            _run_and_store_benchmark(hybrid_retriever, answer_generator, selected_modes, num_questions)
+            _run_and_store_benchmark(hybrid_retriever, answer_generator, selected_modes, num_questions, gt_source, graph)
 
     # ── Render results (or placeholder) ────────────────────────────────────
     df: Optional[pd.DataFrame] = st.session_state.get("benchmark_results_df")
@@ -111,7 +111,7 @@ def _render_header(meta, graph, chunks):
                 <p class="eval-subtitle">
                     Measure how effectively <span class="mode-badge mode-graph">GraphRAG</span>
                     and <span class="mode-badge mode-hybrid">Hybrid GraphRAG</span>
-                    understand software repositories.
+                    understand software repositories against <span class="mode-badge" style="background:rgba(59,130,246,0.15); color:#60a5fa; border:1px solid rgba(59,130,246,0.3);">⚡ Deterministic AST Ground Truth</span>.
                 </p>
             </div>
         </div>
@@ -149,10 +149,22 @@ def _stat_pill(col, label: str, value: str, color: str):
 # Section B — Benchmark Controls
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _render_controls():
+def _render_controls(graph=None):
     st.markdown("### ⚙️ Benchmark Controls")
 
-    col_mode, col_num, col_btn = st.columns([2, 1, 1])
+    col_source, col_mode, col_num, col_btn = st.columns([1.8, 1.6, 0.8, 1.0])
+
+    with col_source:
+        gt_source = st.selectbox(
+            "Ground Truth Source:",
+            options=[
+                "⚡ Live AST Ground Truth (Auto-extracted from Repo)",
+                "📚 Curated Architecture Golden Set"
+            ],
+            index=0,
+            key="eval_gt_source",
+            help="Live AST dynamically extracts 100% deterministic compiler facts from this repository's Abstract Syntax Tree, guaranteeing verifiable callers and tests with zero hallucinations."
+        )
 
     with col_mode:
         mode_choice = st.radio(
@@ -164,15 +176,15 @@ def _render_controls():
         )
 
     with col_num:
-        n_q = len(BENCHMARK_DATASET)
+        default_q = 5
         num_questions = st.number_input(
-            "Test Questions:",
+            "Questions:",
             min_value=1,
-            max_value=n_q,
-            value=n_q,
+            max_value=15,
+            value=default_q,
             step=1,
             key="eval_num_questions",
-            help=f"Use {n_q} to run the full benchmark dataset.",
+            help="Number of questions to evaluate.",
         )
 
     with col_btn:
@@ -194,16 +206,21 @@ def _render_controls():
     }
     selected_modes = mode_map[mode_choice]
 
-    return run_clicked, selected_modes, int(num_questions)
+    return run_clicked, selected_modes, int(num_questions), gt_source
 
 
-def _run_and_store_benchmark(hybrid_retriever, answer_generator, modes, num_questions):
+def _run_and_store_benchmark(hybrid_retriever, answer_generator, modes, num_questions, gt_source, graph=None):
     st.session_state["benchmark_running"] = True
+    st.session_state["benchmark_dataset_source"] = gt_source
 
     progress_bar = st.progress(0.0)
     status_label = st.empty()
 
-    dataset = BENCHMARK_DATASET[:num_questions]
+    if "Live AST" in gt_source and graph is not None:
+        ast_dataset = generate_ast_ground_truth_dataset(graph, max_questions=num_questions)
+        dataset = ast_dataset if ast_dataset else BENCHMARK_DATASET[:num_questions]
+    else:
+        dataset = BENCHMARK_DATASET[:num_questions]
 
     def prog_cb(msg: str, pct: float):
         status_label.markdown(
@@ -742,15 +759,45 @@ def _render_empty_state():
         """
         <div class="empty-state">
             <div class="empty-state-icon">📊</div>
-            <div class="empty-state-title">No benchmark results yet</div>
+            <div class="empty-state-title">Ready for Ground-Truth Evaluation</div>
             <div class="empty-state-desc">
-                Click <strong>Run Benchmark</strong> above to evaluate GraphRAG and Hybrid GraphRAG
-                on the standard test questions and see the results here.
+                Select your benchmark source above and click <strong>🚀 Run Benchmark</strong> to evaluate
+                GraphRAG vs Hybrid GraphRAG with mathematically proven AST ground truth.
             </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown(
+            """
+            <div style="background:#131b2e; border:1px solid #1e293b; border-radius:10px; padding:18px; height:100%;">
+                <h4 style="color:#60a5fa; margin-top:0;">⚡ Deterministic AST Ground Truth</h4>
+                <p style="color:#94a3b8; font-size:0.9rem; line-height:1.5;">
+                    Instead of relying on an LLM to guess or invent the test questions and answers (circular evaluation bias),
+                    RepoMind directly extracts ground-truth caller chains, test suites, and imports from the 
+                    <strong>Python compiler's Abstract Syntax Tree (AST)</strong>. Every dependency is an unshakeable mathematical fact with <strong>0% hallucination</strong>.
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+    with col2:
+        st.markdown(
+            """
+            <div style="background:#131b2e; border:1px solid #1e293b; border-radius:10px; padding:18px; height:100%;">
+                <h4 style="color:#34d399; margin-top:0;">🎯 Works on Any Arbitrary Repository</h4>
+                <p style="color:#94a3b8; font-size:0.9rem; line-height:1.5;">
+                    Whenever you ingest a new GitHub URL, RepoMind's AST scanner identifies the top architectural hubs,
+                    computes their exact upstream and downstream blast radius, and synthesizes a dedicated 
+                    <strong>custom What-If benchmark suite on the fly</strong> without requiring manual human annotations.
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────

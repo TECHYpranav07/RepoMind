@@ -23,19 +23,16 @@ def render_chat():
             "Retrieval Strategy:",
             options=[
                 "Hybrid (Graph + Vector) [Recommended]",
-                "Graph Only (AST Traversal)",
-                "Vector Only (Semantic Search)"
+                "Graph Only (AST Traversal)"
             ],
             index=0,
-            help="Choose between combined hybrid GraphRAG (semantic search + graph traversal), pure graph relationship traversal, or dense semantic vector search."
+            help="Choose between combined hybrid GraphRAG (semantic search + graph traversal) or pure graph relationship traversal."
         )
 
         if "Hybrid" in mode_option:
             mode_key = "hybrid"
-        elif "Graph" in mode_option:
-            mode_key = "graph"
         else:
-            mode_key = "vector"
+            mode_key = "graph"
 
         top_k = st.slider("Top-K Evidence Chunks:", min_value=1, max_value=10, value=4)
         graph_depth = st.slider("Graph Traversal Depth:", min_value=1, max_value=4, value=2)
