@@ -713,6 +713,196 @@ def _render_detailed_results(df: pd.DataFrame):
             use_container_width=True,
         )
 
+        # Query & Retrieval Deep Dive vs Ground Truth
+        _render_query_deep_dive(df)
+
+
+def _render_query_deep_dive(df: pd.DataFrame):
+    """Render side-by-side comparison of Query, Ground Truth, and RAG Retrieval outputs."""
+    if df.empty or "question_id" not in df.columns:
+        return
+
+    st.markdown("---")
+    st.markdown("### 🔬 Query & Retrieval Deep Dive vs. Ground Truth")
+    st.caption(
+        "Inspect the exact natural language query, the verified Ground Truth answer key, "
+        "and how each RAG system's retrieved files, components, and answers compare."
+    )
+
+    qids = df["question_id"].unique().tolist()
+
+    def _format_q(qid_val):
+        q_rows = df[df["question_id"] == qid_val]
+        if not q_rows.empty:
+            q_text = q_rows.iloc[0].get("question") or qid_val
+            return f"[{qid_val}] {q_text[:75]}..."
+        return qid_val
+
+    selected_qid = st.selectbox(
+        "Select Evaluated Question to Inspect:",
+        options=qids,
+        format_func=_format_q,
+        key="deep_dive_qid_select"
+    )
+
+    q_data = df[df["question_id"] == selected_qid]
+    if q_data.empty:
+        return
+
+    first_row = q_data.iloc[0]
+    question_text = first_row.get("question") or selected_qid
+    category = first_row.get("category", "General")
+    exp_files = first_row.get("expected_files") or []
+    if isinstance(exp_files, str):
+        exp_files = [f.strip() for f in exp_files.split(",") if f.strip()]
+    exp_comps = first_row.get("expected_components") or []
+    if isinstance(exp_comps, str):
+        exp_comps = [c.strip() for c in exp_comps.split(",") if c.strip()]
+    ref_answer = first_row.get("reference_answer", "—")
+
+    # Build files tags
+    if exp_files:
+        files_html = "".join(
+            f'<span style="display:inline-block; background:#1e293b; color:#e2e8f0; font-family:monospace; font-size:0.8rem; padding:2px 8px; border-radius:6px; margin:2px 4px 2px 0; border:1px solid #334155;">📄 {f}</span>'
+            for f in exp_files
+        )
+    else:
+        files_html = '<span style="color:#64748b;">None specified</span>'
+
+    # Build components tags
+    if exp_comps:
+        comps_html = "".join(
+            f'<span style="display:inline-block; background:#1e293b; color:#38bdf8; font-family:monospace; font-size:0.8rem; padding:2px 8px; border-radius:6px; margin:2px 4px 2px 0; border:1px solid #0369a1;">🧩 {c}</span>'
+            for c in exp_comps
+        )
+    else:
+        comps_html = '<span style="color:#64748b;">None specified</span>'
+
+    st.markdown(
+        f"""
+        <div style="background:#0f172a; border:1px solid #3b82f6; border-radius:12px; padding:20px; margin-bottom:20px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                <span style="font-size:0.85rem; font-weight:700; color:#60a5fa; text-transform:uppercase; letter-spacing:1px;">
+                    🎯 Ground Truth Specification · {category}
+                </span>
+                <span style="font-size:0.8rem; background:rgba(59,130,246,0.15); color:#93c5fd; padding:3px 10px; border-radius:12px; border:1px solid rgba(59,130,246,0.3);">
+                    Verified Standard
+                </span>
+            </div>
+            <h4 style="color:#f8fafc; margin:0 0 12px 0;">❓ Query: "{question_text}"</h4>
+            <div style="margin-bottom:10px;">
+                <strong style="color:#94a3b8; font-size:0.85rem;">Expected Ground-Truth Files:</strong><br>
+                <div style="margin-top:4px;">{files_html}</div>
+            </div>
+            <div style="margin-bottom:12px;">
+                <strong style="color:#94a3b8; font-size:0.85rem;">Expected Components / Blast Radius:</strong><br>
+                <div style="margin-top:4px;">{comps_html}</div>
+            </div>
+            <div style="background:#131c31; border-left:3px solid #3b82f6; padding:10px 14px; border-radius:0 8px 8px 0;">
+                <strong style="color:#93c5fd; font-size:0.85rem;">Reference Ground-Truth Answer:</strong>
+                <p style="color:#cbd5e1; font-size:0.9rem; margin:4px 0 0 0; line-height:1.5;">{ref_answer}</p>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    modes_in_q = q_data["mode"].unique().tolist()
+    cols = st.columns(len(modes_in_q))
+
+    for idx, mode_name in enumerate(modes_in_q):
+        m_row = q_data[q_data["mode"] == mode_name].iloc[0]
+        is_hybrid = "HYBRID" in mode_name
+        theme_color = "#10b981" if is_hybrid else "#8b5cf6"
+        badge_class = "mode-hybrid" if is_hybrid else "mode-graph"
+
+        ret_files = m_row.get("retrieved_files") or []
+        if isinstance(ret_files, str):
+            ret_files = [f.strip() for f in ret_files.split(",") if f.strip()]
+        ret_comps = m_row.get("retrieved_components") or []
+        if isinstance(ret_comps, str):
+            ret_comps = [c.strip() for c in ret_comps.split(",") if c.strip()]
+        gen_ans = m_row.get("generated_answer") or "—"
+
+        prec = m_row.get("precision_at_k")
+        rec = m_row.get("recall_at_k")
+        f1 = m_row.get("impact_f1")
+        faith = m_row.get("faithfulness")
+        lat = m_row.get("total_latency_s")
+
+        prec_str = f"{prec:.1%}" if not _is_nan(prec) else "N/A"
+        rec_str = f"{rec:.1%}" if not _is_nan(rec) else "N/A"
+        f1_str = f"{f1:.1%}" if not _is_nan(f1) else "N/A"
+        faith_str = f"{faith:.1%}" if not _is_nan(faith) else "N/A"
+        lat_str = f"{lat:.3f}s" if lat is not None else "—"
+
+        ret_files_html = "".join(
+            f'<div style="font-family:monospace; font-size:0.78rem; color:{"#34d399" if f in exp_files else "#cbd5e1"}; padding:2px 0;">{"✅" if f in exp_files else "⚪"} {f}</div>'
+            for f in ret_files[:5]
+        ) if ret_files else '<div style="color:#64748b; font-size:0.8rem;">No files retrieved</div>'
+
+        ret_comps_html = "".join(
+            f'<span style="display:inline-block; background:#1f2937; color:{"#34d399" if c in exp_comps else "#93c5fd"}; font-family:monospace; font-size:0.75rem; padding:1px 6px; border-radius:4px; margin:2px 3px 2px 0; border:1px solid {"#059669" if c in exp_comps else "#1e3a8a"};">{"✓ " if c in exp_comps else ""}{c}</span>'
+            for c in ret_comps[:6]
+        ) if ret_comps else '<span style="color:#64748b; font-size:0.8rem;">None detected</span>'
+
+        with cols[idx]:
+            st.markdown(
+                f"""
+                <div style="background:#111827; border:1px solid {theme_color}55; border-radius:12px; padding:16px; height:100%;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                        <span class="mode-badge {badge_class}" style="font-size:0.9rem; font-weight:700;">
+                            {mode_name} RAG
+                        </span>
+                        <span style="color:#94a3b8; font-size:0.8rem;">
+                            ⏱️ {lat_str}
+                        </span>
+                    </div>
+
+                    <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px;">
+                        <span style="background:#1e293b; color:#e2e8f0; font-size:0.75rem; padding:3px 8px; border-radius:6px; border:1px solid #334155;">
+                            Precision: <strong style="color:{theme_color};">{prec_str}</strong>
+                        </span>
+                        <span style="background:#1e293b; color:#e2e8f0; font-size:0.75rem; padding:3px 8px; border-radius:6px; border:1px solid #334155;">
+                            Recall: <strong style="color:{theme_color};">{rec_str}</strong>
+                        </span>
+                        <span style="background:#1e293b; color:#e2e8f0; font-size:0.75rem; padding:3px 8px; border-radius:6px; border:1px solid #334155;">
+                            Impact F1: <strong style="color:{theme_color};">{f1_str}</strong>
+                        </span>
+                        <span style="background:#1e293b; color:#e2e8f0; font-size:0.75rem; padding:3px 8px; border-radius:6px; border:1px solid #334155;">
+                            Faithfulness: <strong style="color:{theme_color};">{faith_str}</strong>
+                        </span>
+                    </div>
+
+                    <div style="margin-bottom:10px;">
+                        <strong style="color:#94a3b8; font-size:0.8rem;">Retrieved Files (Top-K):</strong>
+                        <div style="margin-top:4px;">{ret_files_html}</div>
+                    </div>
+
+                    <div style="margin-bottom:12px;">
+                        <strong style="color:#94a3b8; font-size:0.8rem;">Detected Components:</strong>
+                        <div style="margin-top:4px;">{ret_comps_html}</div>
+                    </div>
+
+                    <div style="background:#090d16; border-left:3px solid {theme_color}; padding:10px 12px; border-radius:0 6px 6px 0;">
+                        <strong style="color:{theme_color}; font-size:0.8rem;">Generated Answer:</strong>
+                        <p style="color:#e2e8f0; font-size:0.85rem; margin:4px 0 0 0; line-height:1.45;">{gen_ans}</p>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+    with st.expander("🔍 View Retrieved Prompt Context Fed into LLM", expanded=False):
+        c_tabs = st.tabs([f"{m} Context" for m in modes_in_q])
+        for idx, m_name in enumerate(modes_in_q):
+            with c_tabs[idx]:
+                ctx = q_data[q_data["mode"] == m_name].iloc[0].get("prompt_context", "")
+                if ctx:
+                    st.code(ctx, language="markdown")
+                else:
+                    st.info(f"No prompt context available for {m_name}.")
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Section G — Metric Glossary

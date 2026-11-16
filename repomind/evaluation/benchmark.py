@@ -125,8 +125,19 @@ class BenchmarkRunner:
 
                 records.append({
                     "question_id": qid,
+                    "question": question,
                     "category": item.get("category", "General"),
                     "mode": mode.upper(),
+                    # Ground Truth definitions
+                    "expected_files": exp_files,
+                    "expected_components": exp_components,
+                    "reference_answer": ref_answer,
+                    # Actual Retrieval evidence
+                    "retrieved_files": retrieved_files,
+                    "retrieved_components": found_entities,
+                    "generated_answer": gen_answer,
+                    "prompt_context": ret_res.get("prompt_context", ""),
+                    "graph_paths": ret_res.get("graph_paths", []),
                     # Retrieval metrics
                     "precision_at_k": prec,
                     "recall_at_k": rec,
@@ -391,8 +402,17 @@ def _make_failure_record(item: Dict[str, Any], mode: str, error: str) -> Dict[st
     """Create a failure record with all metrics as None."""
     return {
         "question_id": item["id"],
+        "question": item.get("question", ""),
         "category": item.get("category", "General"),
         "mode": mode.upper(),
+        "expected_files": item.get("expected_files", []),
+        "expected_components": item.get("expected_components", []),
+        "reference_answer": item.get("reference_answer", ""),
+        "retrieved_files": [],
+        "retrieved_components": [],
+        "generated_answer": "",
+        "prompt_context": "",
+        "graph_paths": [],
         "precision_at_k": None,
         "recall_at_k": None,
         "impact_precision": None,
