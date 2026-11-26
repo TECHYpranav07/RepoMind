@@ -378,43 +378,88 @@ function DeepDive({ rows }: { rows: BenchmarkRow[] }) {
           <span className="text-muted-foreground">Expected files:</span>
           {expFiles.length ? expFiles.map((f) => <Chip key={f} label={f} mono />) : <span className="text-muted-foreground">None</span>}
         </div>
+        {first.reference_answer && (
+          <p className="mt-2 border-t border-mode-ast/15 pt-2 text-xs leading-relaxed text-muted-foreground">
+            <span className="font-medium text-foreground/90">Expected answer:</span> {first.reference_answer}
+          </p>
+        )}
       </div>
 
       {/* Compact Side-by-Side Comparison */}
       <div className={cn("mt-3 grid gap-3", modesInQ.length > 1 && "md:grid-cols-2")}>
-        {modesInQ.map((m) => {
-          const r = qRows.find((x) => x.mode === m)!;
-          const hybrid = m.includes("HYBRID");
-          const files = asList(r.retrieved_files).slice(0, 4);
-          return (
-            <div key={m} className="rounded-lg border border-border bg-surface p-3.5 text-xs">
-              <div className="flex items-center justify-between gap-2">
-                <ModeBadge mode={hybrid ? "hybrid" : "graph"} />
-                <div className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
-                  <span>Recall: <b className="text-foreground">{isNum(r.recall_at_k) ? `${Math.round(r.recall_at_k * 100)}%` : "N/A"}</b></span>
-                  <span>·</span>
-                  <span>F1: <b className="text-foreground">{isNum(r.impact_f1) ? `${Math.round(r.impact_f1 * 100)}%` : "N/A"}</b></span>
-                  <span>·</span>
-                  <span>{isNum(r.total_latency_s) ? `${r.total_latency_s.toFixed(2)}s` : "—"}</span>
-                </div>
-              </div>
-              <div className="mt-2.5 flex flex-wrap gap-1">
-                {files.length ? (
-                  files.map((f) => <Chip key={f} hit={expFiles.includes(f)} mono label={f} />)
-                ) : (
-                  <span className="text-muted-foreground">No files retrieved</span>
-                )}
-              </div>
-              {r.generated_answer && (
-                <p className="mt-2.5 line-clamp-3 border-t border-border pt-2 leading-relaxed text-muted-foreground">
-                  {r.generated_answer}
-                </p>
-              )}
-            </div>
-          );
-        })}
+        {modesInQ.map((m) => (
+          <DeepDiveModeCard key={`${current}-${m}`} row={qRows.find((x) => x.mode === m)!} expFiles={expFiles} />
+        ))}
       </div>
     </Fold>
+  );
+}
+
+function DeepDiveModeCard({ row, expFiles }: { row: BenchmarkRow; expFiles: string[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const hybrid = row.mode.includes("HYBRID");
+  const files = asList(row.retrieved_files).filter((f) => f && f !== "graph");
+  const hits = files.filter((f) => expFiles.includes(f)).length;
+  const answer = (row.generated_answer || "").trim();
+  const isLong = answer.length > 260;
+
+  return (
+    <div className="flex flex-col rounded-lg border border-border bg-surface p-3.5 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <ModeBadge mode={hybrid ? "hybrid" : "graph"} />
+          {expFiles.length > 0 && (
+            <span
+              className={cn(
+                "rounded px-1.5 py-0.5 font-mono text-[10.5px] font-medium",
+                hits === expFiles.length ? "bg-success/15 text-success" : "bg-warning/15 text-warning",
+              )}
+            >
+              {hits}/{expFiles.length} matched
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
+          <span>
+            Recall: <b className="text-foreground">{isNum(row.recall_at_k) ? `${Math.round(row.recall_at_k * 100)}%` : "N/A"}</b>
+          </span>
+          <span>·</span>
+          <span>
+            F1: <b className="text-foreground">{isNum(row.impact_f1) ? `${Math.round(row.impact_f1 * 100)}%` : "N/A"}</b>
+          </span>
+          <span>·</span>
+          <span>{isNum(row.total_latency_s) ? `${row.total_latency_s.toFixed(2)}s` : "—"}</span>
+        </div>
+      </div>
+
+      <div className="mt-2.5 flex flex-wrap gap-1">
+        {files.length ? (
+          files.slice(0, 5).map((f) => <Chip key={f} hit={expFiles.includes(f)} mono label={f} />)
+        ) : (
+          <span className="text-muted-foreground">No files retrieved</span>
+        )}
+      </div>
+
+      {answer && (
+        <div className="mt-2.5 border-t border-border pt-2.5">
+          <div className={cn("relative", !expanded && isLong && "max-h-[140px] overflow-hidden")}>
+            <Markdown className="text-[12.5px] leading-relaxed">{answer}</Markdown>
+            {!expanded && isLong && (
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-surface to-transparent" />
+            )}
+          </div>
+          {isLong && (
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              className="mt-1.5 text-[11px] font-medium text-signal hover:underline"
+            >
+              {expanded ? "Show less ▴" : "Read full answer ▾"}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

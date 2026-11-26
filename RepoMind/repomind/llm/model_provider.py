@@ -104,7 +104,10 @@ class LocalHeuristicSynthesizer(BaseLLMClient):
 
     def generate(self, prompt: str, system_instruction: Optional[str] = None) -> str:
         # Check if it's a What-If analysis or standard Q&A
-        is_what_if = "What-If" in prompt or "hypothetical" in prompt.lower() or "replace" in prompt.lower() or "impact" in prompt.lower()
+        is_what_if = (
+            "Proposed Change / Query:" in prompt
+            or "What-If Analysis" in (system_instruction or "")
+        )
 
         # Extract retrieved sources and graph paths from prompt
         sources = re.findall(r"---\s*\[Source \d+: ([\w\/\.\:\-]+)\s*\(Relevance: ([\d\.]+)\)\]\s*---\s*\nEntity: ([^\n]+)\n(.*?)(?=(?:---\s*\[Source|\Z))", prompt, re.DOTALL)
@@ -162,26 +165,27 @@ Modifying or replacing this component impacts the storage, retrieval, and pipeli
 - **Execution Status**: *Static prediction based on repository evidence; change has not been executed.*"""
 
     def _synthesize_qa(self, prompt: str, sources: list, graph_paths: list) -> str:
-        ans_lines = [
-            "Based on the repository source code and structural knowledge graph, here is the verified analysis:\n"
-        ]
+        ans_lines = []
 
         if sources:
-            ans_lines.append("**Key Implementation Evidence:**")
-            for idx, src in enumerate(sources[:3], start=1):
-                loc, score, entity, snippet = src
-                snippet_preview = snippet.strip()[:180].replace("\n", " ")
-                ans_lines.append(f"- **{entity}** in `{loc}` (relevance: {score}):\n  > \"{snippet_preview}...\"")
+            ans_lines.append("**Key Evidence Found:**")
+            for _, src in enumerate(sources[:3], start=1):
+                loc, score, entity, _ = src
+                ans_lines.append(f"- **{entity}** (`{loc}`, relevance `{score}`)")
             ans_lines.append("")
 
         if graph_paths:
-            ans_lines.append("**Component Relationship Paths:**")
+            ans_lines.append("**Dependency Paths:**")
             for p in graph_paths[:4]:
                 ans_lines.append(f"- `{p}`")
             ans_lines.append("")
 
-        ans_lines.append("**Conclusion:**")
-        ans_lines.append("The repository components are connected through explicit imports and caller relationships shown above. All statements are grounded in the repository source files.")
+        if not ans_lines:
+            ans_lines.append("No matching code paths or citations were retrieved for this query.")
+        else:
+            ans_lines.append(
+                "Changes to the target component directly propagate along the callers, imports, and tests listed above."
+            )
 
         return "\n".join(ans_lines)
 
