@@ -15,6 +15,7 @@ ENV/
 .coverage
 htmlcov/
 RepoMind/lib/
+lib/
 
 # Environment & secrets
 .env
@@ -24,6 +25,12 @@ RepoMind/.env.local
 RepoMind/-files .env
 
 # Cached repository runtime downloads (preserve sample_repo)
+repomind/data/repositories/*
+!repomind/data/sample_repo/
+repomind/data/indexes/*.faiss
+repomind/data/indexes/*.pkl
+repomind/data/indexes/*.npy
+repomind/data/graphs/*.json
 RepoMind/repomind/data/repositories/*
 !RepoMind/repomind/data/sample_repo/
 RepoMind/repomind/data/indexes/*.faiss
