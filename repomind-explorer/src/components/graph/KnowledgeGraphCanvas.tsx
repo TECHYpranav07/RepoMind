@@ -27,6 +27,7 @@ export interface KnowledgeGraphCanvasProps {
   height: number;
   selectedId?: string | null;
   onSelect?: (id: string) => void;
+  onClear?: () => void;
 }
 
 const esc = (s: unknown) =>
@@ -58,6 +59,7 @@ export default function KnowledgeGraphCanvas({
   height,
   selectedId,
   onSelect,
+  onClear,
 }: KnowledgeGraphCanvasProps) {
   const fgRef = useRef<ForceGraphMethods<N, L> | undefined>(undefined);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -231,9 +233,9 @@ export default function KnowledgeGraphCanvas({
       const alpha = inFocus ? 1 : 0.14;
 
       // soft halo
-      const haloR = r * (isRoot ? 3.2 : node.__role ? 2.6 : 2);
-      const g = ctx.createRadialGradient(x, y, r * 0.6, x, y, haloR);
-      g.addColorStop(0, hexA(node.__color, (isRoot ? 0.45 : node.__role ? 0.35 : 0.18) * alpha));
+      const haloR = r * (isRoot ? 3.4 : node.__role ? 2.8 : 2.3);
+      const g = ctx.createRadialGradient(x, y, r * 0.5, x, y, haloR);
+      g.addColorStop(0, hexA(node.__color, (isRoot ? 0.55 : node.__role ? 0.45 : 0.36) * alpha));
       g.addColorStop(1, hexA(node.__color, 0));
       ctx.fillStyle = g;
       ctx.beginPath();
@@ -243,38 +245,38 @@ export default function KnowledgeGraphCanvas({
       // body
       ctx.beginPath();
       ctx.arc(x, y, r, 0, Math.PI * 2);
-      ctx.fillStyle = hexA(node.__color, 0.22 * alpha + 0.02);
+      ctx.fillStyle = hexA(node.__color, 0.38 * alpha + 0.05);
       ctx.fill();
-      ctx.lineWidth = (isRoot ? 2.4 : 1.4) / Math.max(scale, 0.6);
+      ctx.lineWidth = (isRoot ? 2.6 : 1.7) / Math.max(scale, 0.6);
       ctx.strokeStyle = hexA(node.__color, alpha);
       ctx.stroke();
       // core
       ctx.beginPath();
-      ctx.arc(x, y, r * 0.42, 0, Math.PI * 2);
+      ctx.arc(x, y, r * 0.5, 0, Math.PI * 2);
       ctx.fillStyle = hexA(node.__color, alpha);
       ctx.fill();
 
       if (isRoot) {
         ctx.beginPath();
         ctx.arc(x, y, r + 4 / scale, 0, Math.PI * 2);
-        ctx.lineWidth = 1 / scale;
-        ctx.strokeStyle = "rgba(255,255,255,0.75)";
+        ctx.lineWidth = 1.2 / scale;
+        ctx.strokeStyle = "rgba(255,255,255,0.85)";
         ctx.stroke();
       }
 
       // label
-      const showLabel = (focus.active ? focus.set.has(id) : true) && (scale > 0.55 || isRoot || (!large && r >= 8));
+      const showLabel = (focus.active ? focus.set.has(id) : true) && (scale > 0.48 || isRoot || (!large && r >= 6));
       if (showLabel) {
-        const fs = Math.max(11 / scale, 2.5);
+        const fs = Math.max(11.5 / scale, 2.5);
         ctx.font = `${isRoot ? 600 : 500} ${fs}px Geist, system-ui, sans-serif`;
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
         const label = String(node.name ?? id);
         const ty = y + r + 3 / scale;
         ctx.lineWidth = 3 / scale;
-        ctx.strokeStyle = "rgba(15,17,22,0.85)";
+        ctx.strokeStyle = "rgba(15,17,22,0.9)";
         ctx.strokeText(label, x, ty);
-        ctx.fillStyle = inFocus ? "rgba(241,245,249,0.95)" : "rgba(241,245,249,0.2)";
+        ctx.fillStyle = inFocus ? "rgba(255,255,255,0.98)" : "rgba(241,245,249,0.28)";
         ctx.fillText(label, x, ty);
       }
     },
@@ -357,16 +359,16 @@ export default function KnowledgeGraphCanvas({
           ctx.fill();
         }}
         linkLabel={(l) => `<div class="graph-tooltip"><span class="gt-kicker">Relation</span><div class="gt-name" style="color:${l.__color}">${esc(l.relation)}</div></div>`}
-        linkColor={(l) => (focus.active ? (linkActive(l) ? hexA(l.__color, 0.95) : hexA(l.__color, 0.06)) : hexA(l.__color, 0.42))}
-        linkWidth={(l) => (linkActive(l) ? 2.2 : 1)}
+        linkColor={(l) => (focus.active ? (linkActive(l) ? hexA(l.__color, 1) : hexA(l.__color, 0.12)) : hexA(l.__color, 0.72))}
+        linkWidth={(l) => (linkActive(l) ? 2.4 : 1.35)}
         linkCurvature={0.12}
-        linkDirectionalArrowLength={(l) => (linkActive(l) ? 5 : 3.5)}
+        linkDirectionalArrowLength={(l) => (linkActive(l) ? 5.5 : 4)}
         linkDirectionalArrowRelPos={0.92}
-        linkDirectionalArrowColor={(l) => (focus.active && !linkActive(l) ? hexA(l.__color, 0.06) : hexA(l.__color, 0.85))}
+        linkDirectionalArrowColor={(l) => (focus.active && !linkActive(l) ? hexA(l.__color, 0.12) : hexA(l.__color, 0.95))}
         linkDirectionalParticles={(l) => (!flow || large ? 0 : linkActive(l) ? 3 : focus.active ? 0 : 1)}
         linkDirectionalParticleSpeed={(l) => (linkActive(l) ? 0.012 : 0.0045)}
-        linkDirectionalParticleWidth={(l) => (linkActive(l) ? 3 : 1.6)}
-        linkDirectionalParticleColor={(l) => hexA(l.__color, 0.95)}
+        linkDirectionalParticleWidth={(l) => (linkActive(l) ? 3.2 : 1.8)}
+        linkDirectionalParticleColor={(l) => hexA(l.__color, 0.98)}
         linkCanvasObjectMode={() => "after"}
         linkCanvasObject={paintLinkLabel}
         d3VelocityDecay={phys.velocityDecay}
@@ -405,7 +407,10 @@ export default function KnowledgeGraphCanvas({
           }
           onSelect?.(id);
         }}
-        onBackgroundClick={() => setMulti(new Set())}
+        onBackgroundClick={() => {
+          setMulti(new Set());
+          onClear?.();
+        }}
         onNodeDragEnd={(n) => {
           // release so springs pull it back — the "jiggly" bounce
           n.fx = undefined;

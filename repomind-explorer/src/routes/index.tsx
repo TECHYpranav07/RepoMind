@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { AlertCircle, CheckCircle2, GitBranch, Loader2, Rocket, Star, Zap } from "lucide-react";
+import { AlertCircle, CheckCircle2, GitBranch, Loader2, Rocket, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
@@ -87,24 +87,10 @@ function Dashboard() {
                 </button>
               ))}
             </div>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <Button type="submit" className="h-10 flex-1" disabled={ingest.running || !repoInput.trim()}>
-                {ingest.running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
-                Analyze repository
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                className="h-10 flex-1"
-                disabled={ingest.running}
-                onClick={() => {
-                  setRepoInput("sample_repo");
-                  analyze("sample_repo");
-                }}
-              >
-                <Zap className="h-4 w-4" /> Load built-in RagCraft repo
-              </Button>
-            </div>
+            <Button type="submit" className="h-10 w-full" disabled={ingest.running || !repoInput.trim()}>
+              {ingest.running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
+              Analyze repository
+            </Button>
           </form>
 
           {(ingest.running || ingest.progress) && !ingest.error && (

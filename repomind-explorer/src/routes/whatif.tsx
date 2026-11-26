@@ -1,6 +1,21 @@
 import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { AlertCircle, Download, FileJson, FileText, Loader2, Search } from "lucide-react";
+import {
+  AlertCircle,
+  AlertTriangle,
+  CheckCircle2,
+  Download,
+  FileJson,
+  FileText,
+  FlaskConical,
+  GitBranch,
+  Layers,
+  Loader2,
+  Search,
+  ShieldCheck,
+  Sparkles,
+  Wrench,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
@@ -189,9 +204,7 @@ function Results({ res }: { res: WhatIfResult }) {
         </TabsList>
 
         <TabsContent value="report" className="mt-5">
-          <Section>
-            <Markdown>{res.report_markdown || "No report text generated."}</Markdown>
-          </Section>
+          <ImpactReportView markdown={res.report_markdown || ""} />
         </TabsContent>
 
         <TabsContent value="subgraph" className="mt-5 space-y-4">
@@ -334,5 +347,124 @@ function EntityList({
         <p className="text-sm text-muted-foreground">{empty}</p>
       )}
     </Section>
+  );
+}
+
+interface ReportSection {
+  title: string;
+  body: string;
+}
+
+function formatScannableBody(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+  // Break long dense paragraphs into crisp bullet points while preserving existing lists/code blocks.
+  const lines = trimmed.split("\n");
+  const out: string[] = [];
+  let inCode = false;
+  for (const line of lines) {
+    if (line.trim().startsWith("```")) {
+      inCode = !inCode;
+      out.push(line);
+      continue;
+    }
+    const t = line.trim();
+    if (!inCode && t.length > 150 && !/^([-*]|\d+\.|>|#|\|)/.test(t)) {
+      const sentences = t.split(/(?<=[.!?])\s+(?=[A-Z`*])/).filter(Boolean);
+      if (sentences.length > 1) {
+        for (const s of sentences) out.push(`- ${s.trim()}`);
+        continue;
+      }
+    }
+    out.push(line);
+  }
+  return out.join("\n");
+}
+
+function parseReportSections(markdown: string): ReportSection[] {
+  const lines = markdown.split(/\r?\n/);
+  const sections: ReportSection[] = [];
+  let current: ReportSection | null = null;
+
+  for (const line of lines) {
+    const match = line.match(/^#{3,4}\s+(.+)$/);
+    if (match && match[1]) {
+      if (current && current.body.trim()) sections.push({ ...current, body: formatScannableBody(current.body) });
+      const title = match[1].trim();
+      // Skip redundant top-level "Proposed Change:" header since the banner above already displays it.
+      if (/^Proposed Change:/i.test(title)) {
+        current = null;
+      } else {
+        current = { title, body: "" };
+      }
+    } else if (current) {
+      current.body += (current.body ? "\n" : "") + line;
+    }
+  }
+  if (current && current.body.trim()) sections.push({ ...current, body: formatScannableBody(current.body) });
+  return sections;
+}
+
+function sectionVisual(title: string) {
+  const t = title.toLowerCase();
+  if (t.includes("summary")) return { Icon: Sparkles, accent: "border-l-signal text-signal" };
+  if (t.includes("risk") || t.includes("hazard")) return { Icon: AlertTriangle, accent: "border-l-danger text-danger" };
+  if (t.includes("benefit")) return { Icon: CheckCircle2, accent: "border-l-success text-success" };
+  if (t.includes("affected") || t.includes("component")) return { Icon: Layers, accent: "border-l-warning text-warning" };
+  if (t.includes("reasoning") || t.includes("path")) return { Icon: GitBranch, accent: "border-l-mode-graph text-mode-graph" };
+  if (t.includes("modification")) return { Icon: Wrench, accent: "border-l-signal text-signal" };
+  if (t.includes("test")) return { Icon: FlaskConical, accent: "border-l-mode-hybrid text-mode-hybrid" };
+  if (t.includes("confidence") || t.includes("evidence")) return { Icon: ShieldCheck, accent: "border-l-muted-foreground text-muted-foreground" };
+  return { Icon: FileText, accent: "border-l-border text-foreground" };
+}
+
+function ImpactReportView({ markdown }: { markdown: string }) {
+  const sections = useMemo(() => parseReportSections(markdown), [markdown]);
+
+  if (!markdown.trim()) {
+    return (
+      <Section>
+        <p className="text-sm text-muted-foreground">No report text generated.</p>
+      </Section>
+    );
+  }
+
+  if (sections.length === 0) {
+    return (
+      <Section>
+        <Markdown>{formatScannableBody(markdown)}</Markdown>
+      </Section>
+    );
+  }
+
+  const lead = sections[0];
+  if (!lead) return null;
+  const rest = sections.slice(1);
+  const isLeadSummary = lead.title.toLowerCase().includes("summary");
+  const gridItems = isLeadSummary ? rest : sections;
+
+  return (
+    <div className="space-y-4">
+      {isLeadSummary && <ReportCard section={lead} />}
+      <div className="grid gap-4 md:grid-cols-2">
+        {gridItems.map((sec) => (
+          <ReportCard key={sec.title} section={sec} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ReportCard({ section }: { section: ReportSection }) {
+  const { Icon, accent } = sectionVisual(section.title);
+  const [borderClass, iconColor] = accent.split(" ");
+  return (
+    <div className={cn("rounded-xl border border-border border-l-2 bg-card p-5", borderClass)}>
+      <div className="mb-3 flex items-center gap-2">
+        <Icon className={cn("h-4 w-4 shrink-0", iconColor)} />
+        <h3 className="text-sm font-semibold tracking-tight text-foreground">{section.title}</h3>
+      </div>
+      <Markdown className="text-[13.5px] leading-relaxed">{section.body}</Markdown>
+    </div>
   );
 }

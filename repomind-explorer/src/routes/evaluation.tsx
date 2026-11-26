@@ -7,9 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LatencyChart, ScoreChart } from "@/components/app/BenchmarkCharts";
-import { CodeBlock } from "@/components/app/CodeBlock";
 import { Markdown } from "@/components/app/Markdown";
 import { ModeBadge, PageHeader, RequireRepo } from "@/components/app/Page";
 import { SearchSelect } from "@/components/app/SearchSelect";
@@ -51,7 +49,7 @@ const MODE_CHOICES: { label: string; modes: ChatMode[] }[] = [
 ];
 
 function Evaluation() {
-  const { summary, client, connection, benchmark, setBenchmark } = useWorkspace();
+  const { summary, client, benchmark, setBenchmark } = useWorkspace();
   const [gt, setGt] = useState<GtSource>("ast");
   const [speed, setSpeed] = useState<SpeedMode>("fast");
   const [modeIdx, setModeIdx] = useState(0);
@@ -61,7 +59,8 @@ function Evaluation() {
   const [error, setError] = useState<string | null>(null);
 
   const run = async () => {
-    const modes = MODE_CHOICES[modeIdx].modes;
+    const choice = MODE_CHOICES[modeIdx];
+    const modes = choice?.modes ?? [];
     if (!modes.length) return setError("Please select at least one retrieval mode.");
     setRunning(true);
     setError(null);
@@ -80,6 +79,7 @@ function Evaluation() {
   };
 
   const rows = benchmark.rows;
+  const lastRunText = benchmark.lastRun ? benchmark.lastRun.toTimeString().slice(0, 8) : "Not run yet";
 
   return (
     <>
@@ -87,17 +87,17 @@ function Evaluation() {
         eyebrow="Evaluation & Benchmark"
         title="How well does each retrieval mode understand this repo?"
         description={
-          <span className="inline-flex flex-wrap items-center gap-1.5">
-            Compare <ModeBadge mode="graph" /> vs <ModeBadge mode="hybrid" /> against <ModeBadge mode="ast" />
+          <span className="inline-flex flex-wrap items-center gap-2">
+            <span>
+              Compare <ModeBadge mode="graph" /> vs <ModeBadge mode="hybrid" /> against <ModeBadge mode="ast" />
+            </span>
+            <span className="text-border">·</span>
+            <span className="font-mono text-xs text-muted-foreground">
+              {summary?.meta?.full_name ?? "Repo"} ({(summary?.nodes ?? 0).toLocaleString()} nodes) · Last run: {lastRunText}
+            </span>
           </span>
         }
       />
-
-      <div className="mb-5 grid gap-3 md:grid-cols-3">
-        <Pill label="Active repository" value={summary?.meta?.full_name ?? "Loaded Repo"} />
-        <Pill label="Code graph nodes" value={`${(summary?.nodes ?? 0).toLocaleString()} AST nodes`} />
-        <Pill label="Last run time" value={benchmark.lastRun ? benchmark.lastRun.toTimeString().slice(0, 8) : "Not run yet"} />
-      </div>
 
       <div className="rounded-xl border border-border bg-card p-5">
         <div className="grid gap-4 md:grid-cols-2">
@@ -112,10 +112,7 @@ function Evaluation() {
               </SelectContent>
             </Select>
           </Field>
-          <Field
-            label="Execution engine"
-            hint={connection.mode === "demo" ? "Sample results were recorded with the local engine." : undefined}
-          >
+          <Field label="Execution engine">
             <Select value={speed} onValueChange={(v) => setSpeed(v as SpeedMode)}>
               <SelectTrigger className="h-10">
                 <SelectValue />
@@ -161,7 +158,7 @@ function Evaluation() {
           </Button>
         </div>
         {progress && (
-          <div className="mt-5 space-y-2">
+          <div className="mt-4 space-y-2">
             <Progress value={progress.progress * 100} className="h-1.5" />
             <p className={cn("font-mono text-xs", progress.progress >= 1 && !running ? "text-success" : "text-muted-foreground")}>
               {progress.message}
@@ -174,7 +171,7 @@ function Evaluation() {
       {!rows || rows.length === 0 ? (
         <EmptyState />
       ) : (
-        <div className="mt-10 space-y-10">
+        <div className="mt-8 space-y-8">
           <Kpis rows={rows} />
           <div>
             <SectionTitle>Performance visualizations</SectionTitle>
@@ -192,8 +189,8 @@ function Evaluation() {
           </div>
           <Interpretation rows={rows} />
           <div className="space-y-3">
-            <DetailedResults rows={rows} />
             <DeepDive rows={rows} />
+            <DetailedResults rows={rows} />
           </div>
         </div>
       )}
@@ -204,21 +201,11 @@ function Evaluation() {
   );
 }
 
-function Pill({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-border bg-card px-4 py-3">
-      <div className="text-[10.5px] uppercase tracking-[0.12em] text-muted-foreground">{label}</div>
-      <div className="mt-1 truncate font-mono text-sm">{value}</div>
-    </div>
-  );
-}
-
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
       <div className="mb-1.5 text-xs text-muted-foreground">{label}</div>
       {children}
-      {hint && <div className="mt-1 text-[11px] text-muted-foreground/80">{hint}</div>}
     </div>
   );
 }
@@ -229,37 +216,21 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 
 function EmptyState() {
   return (
-    <div className="mt-10 rounded-xl border border-dashed border-border px-6 py-12 text-center">
+    <div className="mt-8 rounded-xl border border-dashed border-border px-6 py-10 text-center">
       <h3 className="text-base font-semibold">Ready for ground-truth evaluation</h3>
       <p className="mx-auto mt-2 max-w-lg text-sm leading-relaxed text-muted-foreground">
-        Select your parameters above and click <span className="text-foreground">Run benchmark</span> to evaluate GraphRAG vs Hybrid GraphRAG against
-        mathematically verified repository facts.
+        Click <span className="text-foreground font-medium">Run benchmark</span> above to test GraphRAG vs Hybrid GraphRAG using{" "}
+        deterministic compiler facts extracted directly from this repository&apos;s AST.
       </p>
-      <div className="mx-auto mt-8 grid max-w-3xl gap-4 text-left md:grid-cols-2">
-        <div className="rounded-lg border border-border bg-card p-4">
-          <h4 className="text-sm font-medium text-mode-ast">Live AST ground truth</h4>
-          <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-            Synthesizes benchmark test suites directly from the repository's syntax tree. Target files, callers, and test suites are 100%
-            deterministic with zero LLM hallucination.
-          </p>
-        </div>
-        <div className="rounded-lg border border-border bg-card p-4">
-          <h4 className="text-sm font-medium text-mode-hybrid">Works on any repository</h4>
-          <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-            No manual test annotations required. RepoMind scans topological hubs in any ingested GitHub repo and automatically generates an
-            explainable What-If benchmark suite on the fly.
-          </p>
-        </div>
-      </div>
     </div>
   );
 }
 
 const KPIS = [
-  { title: "Retrieval recall", metric: "recall_at_k", unit: "%" as const, desc: "% of relevant files successfully retrieved", hib: true },
-  { title: "Impact detection", metric: "impact_f1", unit: "%" as const, desc: "F1 score for detecting blast-radius affected components", hib: true },
-  { title: "Answer faithfulness", metric: "faithfulness", unit: "%" as const, desc: "% of generated answer grounded in retrieved code", hib: true },
-  { title: "Response speed", metric: "total_latency_s", unit: "s" as const, desc: "Total end-to-end execution time", hib: false },
+  { title: "Retrieval recall", metric: "recall_at_k", unit: "%" as const, desc: "% of relevant files retrieved", hib: true },
+  { title: "Impact detection", metric: "impact_f1", unit: "%" as const, desc: "Accuracy predicting affected components", hib: true },
+  { title: "Answer faithfulness", metric: "faithfulness", unit: "%" as const, desc: "% of answer grounded in code", hib: true },
+  { title: "Response speed", metric: "total_latency_s", unit: "s" as const, desc: "End-to-end execution latency", hib: false },
 ];
 
 function Kpis({ rows }: { rows: BenchmarkRow[] }) {
@@ -291,11 +262,11 @@ function Kpis({ rows }: { rows: BenchmarkRow[] }) {
                   </span>
                 )}
               </div>
-              <div className="mt-4 space-y-2">
+              <div className="mt-3 space-y-1.5">
                 <KpiRow label="Graph" tone="graph" v={fmtMetric(gv, k.unit)} />
                 <KpiRow label="Hybrid" tone="hybrid" v={fmtMetric(hv, k.unit)} />
               </div>
-              <div className="mt-4 border-t border-border pt-3 text-[11px] text-muted-foreground">{k.desc}</div>
+              <div className="mt-3 border-t border-border pt-2.5 text-[11px] text-muted-foreground">{k.desc}</div>
             </div>
           );
         })}
@@ -318,7 +289,7 @@ function KpiRow({ label, tone, v }: { label: string; tone: "graph" | "hybrid"; v
 
 function Interpretation({ rows }: { rows: BenchmarkRow[] }) {
   const m = buildMatrix(rows);
-  if (!m.hasAny) return <p className="text-sm text-muted-foreground">Run benchmark to view comparison insights.</p>;
+  if (!m.hasAny) return null;
   const tone = {
     hybrid: "border-mode-hybrid/40 text-mode-hybrid",
     graph: "border-mode-graph/40 text-mode-graph",
@@ -326,7 +297,7 @@ function Interpretation({ rows }: { rows: BenchmarkRow[] }) {
   }[m.verdict.tone];
   return (
     <div>
-      <SectionTitle>Key takeaways & comparison matrix</SectionTitle>
+      <SectionTitle>Comparison summary</SectionTitle>
       <div className={cn("mb-4 rounded-lg border-l-2 bg-card px-4 py-3 text-sm font-medium", tone)}>{m.verdict.text}</div>
       {m.rows.length > 0 && (
         <div className="overflow-hidden rounded-xl border border-border bg-card">
@@ -337,7 +308,7 @@ function Interpretation({ rows }: { rows: BenchmarkRow[] }) {
                 <TableHead>GraphRAG</TableHead>
                 <TableHead>Hybrid GraphRAG</TableHead>
                 <TableHead>Leading approach</TableHead>
-                <TableHead>Summary</TableHead>
+                <TableHead>Margin</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -380,6 +351,73 @@ function Fold({ title, children }: { title: string; children: React.ReactNode })
   );
 }
 
+function DeepDive({ rows }: { rows: BenchmarkRow[] }) {
+  const qids = useMemo(() => Array.from(new Set(rows.map((r) => r.question_id))), [rows]);
+  const [qid, setQid] = useState<string | null>(qids[0] ?? null);
+  const current = (qid && qids.includes(qid) ? qid : qids[0]) ?? null;
+  if (!current) return null;
+  const qRows = rows.filter((r) => r.question_id === current);
+  const first = qRows[0];
+  if (!first) return null;
+  const expFiles = asList(first.expected_files);
+  const modesInQ = Array.from(new Set(qRows.map((r) => r.mode)));
+
+  const fmtQ = (q: string) => {
+    const r = rows.find((x) => x.question_id === q);
+    return `[${q}] ${(r?.question || q).slice(0, 75)}`;
+  };
+
+  return (
+    <Fold title="Query & retrieval check vs. ground truth">
+      <SearchSelect value={current} options={qids} onChange={setQid} format={fmtQ} searchPlaceholder="Select query…" />
+
+      {/* Concise Query & Expected Targets Bar */}
+      <div className="mt-4 rounded-lg border border-mode-ast/25 bg-mode-ast/5 px-4 py-3">
+        <div className="text-sm font-medium text-foreground">“{first.question || current}”</div>
+        <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
+          <span className="text-muted-foreground">Expected files:</span>
+          {expFiles.length ? expFiles.map((f) => <Chip key={f} label={f} mono />) : <span className="text-muted-foreground">None</span>}
+        </div>
+      </div>
+
+      {/* Compact Side-by-Side Comparison */}
+      <div className={cn("mt-3 grid gap-3", modesInQ.length > 1 && "md:grid-cols-2")}>
+        {modesInQ.map((m) => {
+          const r = qRows.find((x) => x.mode === m)!;
+          const hybrid = m.includes("HYBRID");
+          const files = asList(r.retrieved_files).slice(0, 4);
+          return (
+            <div key={m} className="rounded-lg border border-border bg-surface p-3.5 text-xs">
+              <div className="flex items-center justify-between gap-2">
+                <ModeBadge mode={hybrid ? "hybrid" : "graph"} />
+                <div className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
+                  <span>Recall: <b className="text-foreground">{isNum(r.recall_at_k) ? `${Math.round(r.recall_at_k * 100)}%` : "N/A"}</b></span>
+                  <span>·</span>
+                  <span>F1: <b className="text-foreground">{isNum(r.impact_f1) ? `${Math.round(r.impact_f1 * 100)}%` : "N/A"}</b></span>
+                  <span>·</span>
+                  <span>{isNum(r.total_latency_s) ? `${r.total_latency_s.toFixed(2)}s` : "—"}</span>
+                </div>
+              </div>
+              <div className="mt-2.5 flex flex-wrap gap-1">
+                {files.length ? (
+                  files.map((f) => <Chip key={f} hit={expFiles.includes(f)} mono label={f} />)
+                ) : (
+                  <span className="text-muted-foreground">No files retrieved</span>
+                )}
+              </div>
+              {r.generated_answer && (
+                <p className="mt-2.5 line-clamp-3 border-t border-border pt-2 leading-relaxed text-muted-foreground">
+                  {r.generated_answer}
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </Fold>
+  );
+}
+
 function DetailedResults({ rows }: { rows: BenchmarkRow[] }) {
   const [cat, setCat] = useState("All");
   const [mode, setMode] = useState("All");
@@ -387,7 +425,7 @@ function DetailedResults({ rows }: { rows: BenchmarkRow[] }) {
   const modes = ["All", ...Array.from(new Set(rows.map((r) => r.mode).filter(Boolean))).sort()];
   const filtered = rows.filter((r) => (cat === "All" || r.category === cat) && (mode === "All" || r.mode === mode));
   return (
-    <Fold title="Detailed results table & CSV export">
+    <Fold title="Detailed per-question results & CSV export">
       <div className="mb-4 grid gap-3 sm:grid-cols-2">
         <Field label="Filter category">
           <Select value={cat} onValueChange={setCat}>
@@ -418,11 +456,11 @@ function DetailedResults({ rows }: { rows: BenchmarkRow[] }) {
           </Select>
         </Field>
       </div>
-      <div className="max-h-[320px] overflow-auto rounded-lg border border-border">
+      <div className="max-h-[300px] overflow-auto rounded-lg border border-border">
         <Table>
           <TableHeader>
             <TableRow>
-              {["QID", "Category", "Mode", "Recall@K", "Precision@K", "Impact F1", "Correctness", "Faithfulness", "Total Latency", "Status"].map((h) => (
+              {["QID", "Category", "Mode", "Recall@K", "Precision@K", "Impact F1", "Correctness", "Faithfulness", "Latency", "Status"].map((h) => (
                 <TableHead key={h} className="whitespace-nowrap">
                   {h}
                 </TableHead>
@@ -452,120 +490,6 @@ function DetailedResults({ rows }: { rows: BenchmarkRow[] }) {
   );
 }
 
-function DeepDive({ rows }: { rows: BenchmarkRow[] }) {
-  const qids = useMemo(() => Array.from(new Set(rows.map((r) => r.question_id))), [rows]);
-  const [qid, setQid] = useState<string | null>(qids[0] ?? null);
-  const current = qid && qids.includes(qid) ? qid : qids[0];
-  const qRows = rows.filter((r) => r.question_id === current);
-  if (!qRows.length) return null;
-  const first = qRows[0];
-  const expFiles = asList(first.expected_files);
-  const expComps = asList(first.expected_components);
-  const modesInQ = Array.from(new Set(qRows.map((r) => r.mode)));
-  const fmtQ = (q: string) => {
-    const r = rows.find((x) => x.question_id === q);
-    return `[${q}] ${(r?.question || q).slice(0, 70)}...`;
-  };
-
-  return (
-    <Fold title="Query & retrieval deep dive vs. ground truth">
-      <SearchSelect value={current} options={qids} onChange={setQid} format={fmtQ} searchPlaceholder="Search questions…" />
-
-      <div className="mt-5 rounded-xl border border-mode-ast/25 bg-mode-ast/5 p-5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-mode-ast">Verified ground truth · {first.category || "General"}</span>
-          <span className="rounded-full border border-mode-ast/30 bg-mode-ast/10 px-2 py-0.5 text-[11px] text-mode-ast">Compiler AST truth</span>
-        </div>
-        <h4 className="mt-2 font-medium">Query: “{first.question || current}”</h4>
-        <div className="mt-3 space-y-2 text-sm">
-          <ChipRow label="Target files" items={expFiles} mono />
-          <ChipRow label="Blast radius components" items={expComps} />
-        </div>
-        <div className="mt-3 rounded-lg border border-border bg-card/60 p-3 text-sm">
-          <span className="font-medium">Reference answer: </span>
-          <span className="text-muted-foreground">{first.reference_answer || "—"}</span>
-        </div>
-      </div>
-
-      <div className={cn("mt-4 grid gap-4", modesInQ.length > 1 && "md:grid-cols-2")}>
-        {modesInQ.map((m) => {
-          const r = qRows.find((x) => x.mode === m)!;
-          const hybrid = m.includes("HYBRID");
-          const files = asList(r.retrieved_files).slice(0, 4);
-          const comps = asList(r.retrieved_components).slice(0, 4);
-          return (
-            <div key={m} className={cn("rounded-xl border border-border bg-card p-4", hybrid ? "border-t-mode-hybrid" : "border-t-mode-graph", "border-t-2")}>
-              <div className="flex items-center justify-between">
-                <ModeBadge mode={hybrid ? "hybrid" : "graph"} />
-                <span className="font-mono text-xs text-muted-foreground">{isNum(r.total_latency_s) ? `${r.total_latency_s.toFixed(2)}s` : "—"}</span>
-              </div>
-              <div className="mt-3 flex gap-2 text-xs">
-                <span className="rounded bg-muted px-2 py-0.5">
-                  Recall: <b className="font-mono">{isNum(r.recall_at_k) ? `${Math.round(r.recall_at_k * 100)}%` : "N/A"}</b>
-                </span>
-                <span className="rounded bg-muted px-2 py-0.5">
-                  Impact F1: <b className="font-mono">{isNum(r.impact_f1) ? `${Math.round(r.impact_f1 * 100)}%` : "N/A"}</b>
-                </span>
-              </div>
-              <div className="mt-3 text-xs text-muted-foreground">Retrieved files</div>
-              <div className="mt-1.5 flex flex-wrap gap-1.5">
-                {files.length ? (
-                  files.map((f) => <Chip key={f} hit={expFiles.includes(f)} mono label={f} />)
-                ) : (
-                  <span className="text-xs text-muted-foreground">No files retrieved</span>
-                )}
-              </div>
-              <div className="mt-3 text-xs text-muted-foreground">Detected components</div>
-              <div className="mt-1.5 flex flex-wrap gap-1.5">
-                {comps.length ? (
-                  comps.map((c, i) => <Chip key={`${c}-${i}`} hit={expComps.includes(c)} label={c} />)
-                ) : (
-                  <span className="text-xs text-muted-foreground">None detected</span>
-                )}
-              </div>
-              <div className="mt-4 rounded-lg border border-border bg-surface p-3">
-                <div className={cn("mb-1 text-xs font-medium", hybrid ? "text-mode-hybrid" : "text-mode-graph")}>Generated answer</div>
-                <Markdown className="text-[13px]">{r.generated_answer || "—"}</Markdown>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="mt-4">
-        <Fold title="Inspect exact prompt context sent to LLM">
-          <Tabs defaultValue={modesInQ[0]}>
-            <TabsList>
-              {modesInQ.map((m) => (
-                <TabsTrigger key={m} value={m}>
-                  {m} context
-                </TabsTrigger>
-              ))}
-            </TabsList>
-            {modesInQ.map((m) => {
-              const ctx = qRows.find((x) => x.mode === m)?.prompt_context;
-              return (
-                <TabsContent key={m} value={m} className="mt-3">
-                  {ctx ? <CodeBlock code={ctx} maxHeight={380} /> : <p className="text-xs text-muted-foreground">No prompt context recorded.</p>}
-                </TabsContent>
-              );
-            })}
-          </Tabs>
-        </Fold>
-      </div>
-    </Fold>
-  );
-}
-
-function ChipRow({ label, items, mono }: { label: string; items: string[]; mono?: boolean }) {
-  return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      <span className="mr-1 text-xs font-medium">{label}:</span>
-      {items.length ? items.map((i) => <Chip key={i} label={i} mono={mono} />) : <span className="text-xs text-muted-foreground">None</span>}
-    </div>
-  );
-}
-
 function Chip({ label, hit, mono }: { label: string; hit?: boolean; mono?: boolean }) {
   return (
     <span
@@ -583,21 +507,16 @@ function Chip({ label, hit, mono }: { label: string; hit?: boolean; mono?: boole
 
 function Glossary() {
   return (
-    <Fold title="Metric glossary & evaluation methodology">
+    <Fold title="Metric glossary">
       <Markdown>
-        {`| Metric | Plain English | Formula |
+        {`| Metric | Meaning | Formula |
 |---|---|---|
-| **Recall@K** | Did the system find all relevant files? | True Positives / Expected Files |
-| **Precision@K** | Were the retrieved files actually relevant? | True Positives / K Retrieved |
-| **Impact F1** | Accuracy in predicting affected blast radius | 2 · Precision · Recall / (P + R) |
-| **Answer Correctness** | Semantic token overlap with golden answer | Token-level F1 vs reference |
-| **Answer Faithfulness** | Was the answer grounded in retrieved code? | Grounded tokens / Answer tokens |
-| **Total Latency** | End-to-end execution time (Retrieval + LLM) | Seconds |
-
-**Why Live AST Ground Truth Matters:**
-Conventional RAG benchmarks rely on LLM-generated questions and answers, introducing circular evaluation bias.
-RepoMind extracts actual callers, test suites, and imports from the **Python Abstract Syntax Tree (AST)**,
-guaranteeing 100% objective, mathematically verifiable benchmark facts with zero hallucination.`}
+| **Recall@K** | Fraction of expected files retrieved | True Positives / Expected Files |
+| **Precision@K** | Fraction of retrieved files that were relevant | True Positives / K Retrieved |
+| **Impact F1** | Accuracy predicting affected components | 2 · P · R / (P + R) |
+| **Correctness** | Token overlap with reference answer | Token F1 vs reference |
+| **Faithfulness** | Grounding in retrieved code context | Grounded tokens / Answer tokens |
+| **Latency** | End-to-end retrieval + generation time | Seconds |`}
       </Markdown>
     </Fold>
   );

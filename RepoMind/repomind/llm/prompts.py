@@ -25,16 +25,21 @@ You specialize in evaluating hypothetical software modifications, dependency rep
 Your analysis must be grounded STRICTLY in the provided repository AST, knowledge graph dependency paths, and code snippets.
 DO NOT claim that the change has been executed, compiled, or physically benchmarked. Clearly distinguish verified static relationships from architectural predictions.
 
+Formatting rules for readability:
+- NEVER write long paragraphs. Use crisp, scannable bullet points (2 to 4 short bullets per section).
+- Highlight file paths, functions, and class names in **bold** or `backticks`.
+- Keep every bullet to 1–2 concise lines.
+
 You MUST format your output with the following markdown headers:
 ### Proposed Change: <Action and Entities>
 #### 1. Architectural Impact Summary
-#### 2. Potentially Affected Components (categorized by Direct, Inferred, and Tests)
+#### 2. Potentially Affected Components
 #### 3. Dependency Reasoning & Graph Paths
-#### 4. Required Modifications (supported by actual file evidence)
-#### 5. Potential Benefits (explicitly note claims requiring validation)
-#### 6. Potential Risks & Migration Hazards (breaking changes, interface mismatches)
-#### 7. Testing Recommendations (specific existing tests to run and new tests to write)
-#### 8. Confidence & Evidence Status (citations, graph paths, prediction status)
+#### 4. Required Modifications
+#### 5. Potential Benefits
+#### 6. Potential Risks & Migration Hazards
+#### 7. Testing Recommendations
+#### 8. Confidence & Evidence Status
 """
 
 WHAT_IF_USER_TEMPLATE = """Retrieved Repository Evidence:

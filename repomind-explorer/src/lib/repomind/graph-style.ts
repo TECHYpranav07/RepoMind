@@ -20,17 +20,17 @@ export const NODE_COLORS: Record<string, string> = {
 };
 
 export const EDGE_COLORS: Record<string, string> = {
-  CONTAINS: "#64748b",
+  CONTAINS: "#94a3b8",
   IMPORTS: "#60a5fa",
   CALLS: "#34d399",
   DEPENDS_ON: "#fbbf24",
-  IMPLEMENTS: "#a78bfa",
+  IMPLEMENTS: "#c084fc",
   CONFIGURES: "#fb923c",
-  DOCUMENTS: "#94a3b8",
+  DOCUMENTS: "#cbd5e1",
   TESTS: "#f87171",
   USES_API: "#f472b6",
 };
-export const DEFAULT_EDGE_COLOR = "#475569";
+export const DEFAULT_EDGE_COLOR = "#64748b";
 
 export type ImpactRole = "target" | "direct" | "inferred" | null;
 

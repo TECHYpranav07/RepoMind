@@ -63,6 +63,7 @@ function GraphTab() {
   const [preset, setPreset] = useState<PhysicsPreset>("jiggly");
   const [spacing, setSpacing] = useState(120);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [graphFocusId, setGraphFocusId] = useState<string | null>(null);
 
   // Default: first six entity types, like the original filter.
   useEffect(() => {
@@ -74,6 +75,11 @@ function GraphTab() {
   useEffect(() => {
     if (sortedIds.length && (!selectedId || !byId.has(selectedId))) setSelectedId(sortedIds[0]);
   }, [sortedIds, byId, selectedId]);
+
+  const pickEntity = (id: string) => {
+    setSelectedId(id);
+    setGraphFocusId(id);
+  };
 
   const filtered = useMemo(
     () => (data ? filterGraph(data.nodes, data.edges, types ?? [], {}) : { nodes: [], edges: [] }),
@@ -179,8 +185,9 @@ function GraphTab() {
         preset={preset}
         springLength={spacing}
         height={580}
-        selectedId={selectedId}
-        onSelect={setSelectedId}
+        selectedId={graphFocusId}
+        onSelect={pickEntity}
+        onClear={() => setGraphFocusId(null)}
       />
       <RelationLegend relations={relations} />
 
@@ -188,7 +195,7 @@ function GraphTab() {
         <SearchSelect
           value={selectedId}
           options={sortedIds}
-          onChange={setSelectedId}
+          onChange={pickEntity}
           format={formatNode}
           searchPlaceholder="Search entities…"
         />
