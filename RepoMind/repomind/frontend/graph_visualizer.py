@@ -1,0 +1,252 @@
+"""Interactive Knowledge Graph visualizer using PyVis and Plotly."""
+import json
+import os
+import tempfile
+from typing import Dict, Any, List, Optional, Set
+import networkx as nx
+
+try:
+    from pyvis.network import Network
+    PYVIS_AVAILABLE = True
+except ImportError:
+    PYVIS_AVAILABLE = False
+
+
+# Node color palette by software entity type
+NODE_COLORS = {
+    "Repository": "#6366f1",    # Indigo
+    "Module": "#8b5cf6",        # Purple
+    "File": "#3b82f6",          # Blue
+    "Class": "#06b6d4",         # Cyan
+    "Function": "#10b981",      # Emerald
+    "Library": "#f59e0b",       # Amber
+    "API": "#ec4899",           # Pink
+    "Configuration": "#f97316", # Orange
+    "Documentation": "#64748b", # Slate
+    "Test": "#ef4444",          # Rose / Red
+    "Target": "#dc2626",        # Crimson for What-If target
+    "DirectImpact": "#ea580c",  # Dark Orange
+    "InferredImpact": "#ca8a04",# Yellow-Gold
+    "Unknown": "#94a3b8"
+}
+
+EDGE_COLORS = {
+    "CONTAINS": "#64748b",
+    "IMPORTS": "#3b82f6",
+    "CALLS": "#10b981",
+    "DEPENDS_ON": "#f59e0b",
+    "IMPLEMENTS": "#8b5cf6",
+    "CONFIGURES": "#f97316",
+    "DOCUMENTS": "#94a3b8",
+    "TESTS": "#ef4444",
+    "USES_API": "#ec4899"
+}
+
+
+class GraphVisualizer:
+    """Renders interactive NetworkX subgraphs to PyVis HTML or Plotly figures."""
+
+    @staticmethod
+    def render_pyvis_html(
+        graph: nx.DiGraph,
+        height: str = "550px",
+        target_ids: Optional[Set[str]] = None,
+        direct_ids: Optional[Set[str]] = None,
+        inferred_ids: Optional[Set[str]] = None,
+        selected_node_types: Optional[List[str]] = None,
+        physics_preset: str = "jiggly",
+        spring_length: int = 120
+    ) -> str:
+        """Generate interactive self-contained PyVis HTML string with elastic jiggly physics."""
+        if not PYVIS_AVAILABLE or graph.number_of_nodes() == 0:
+            return "<div style='color:#94a3b8; padding:20px; text-align:center;'>No graph nodes available to display.</div>"
+
+        target_ids = target_ids or set()
+        direct_ids = direct_ids or set()
+        inferred_ids = inferred_ids or set()
+
+        net = Network(height=height, width="100%", directed=True, bgcolor="#0f172a", font_color="#e2e8f0")
+
+        # Configure lively, elastic "jiggly" physics presets
+        if physics_preset == "floating":
+            # Continuous subtle drifting/breathing movement
+            physics_config = {
+                "barnesHut": {
+                    "gravitationalConstant": -3200,
+                    "centralGravity": 0.15,
+                    "springLength": max(spring_length, 80),
+                    "springConstant": 0.035,
+                    "damping": 0.08,
+                    "avoidOverlap": 0.25
+                },
+                "maxVelocity": 25,
+                "minVelocity": 0.01,
+                "timestep": 0.45,
+                "stabilization": {
+                    "enabled": True,
+                    "iterations": 30,
+                    "updateInterval": 10
+                }
+            }
+        elif physics_preset == "calm":
+            # Quick settling, calm layout
+            physics_config = {
+                "barnesHut": {
+                    "gravitationalConstant": -3500,
+                    "centralGravity": 0.3,
+                    "springLength": max(spring_length, 80),
+                    "springConstant": 0.05,
+                    "damping": 0.75,
+                    "avoidOverlap": 0.2
+                },
+                "maxVelocity": 30,
+                "minVelocity": 0.5,
+                "timestep": 0.5,
+                "stabilization": {
+                    "enabled": True,
+                    "iterations": 120
+                }
+            }
+        else:
+            # Default "jiggly": Organic elastic bouncing, reactive springs, interactive oscillation
+            physics_config = {
+                "barnesHut": {
+                    "gravitationalConstant": -4200,
+                    "centralGravity": 0.18,
+                    "springLength": max(spring_length, 90),
+                    "springConstant": 0.055,
+                    "damping": 0.12,
+                    "avoidOverlap": 0.28
+                },
+                "maxVelocity": 38,
+                "minVelocity": 0.06,
+                "timestep": 0.5,
+                "stabilization": {
+                    "enabled": True,
+                    "iterations": 45,
+                    "updateInterval": 10,
+                    "fit": True
+                }
+            }
+
+        pyvis_options = {
+            "physics": physics_config,
+            "interaction": {
+                "hover": True,
+                "hoverConnectedEdges": True,
+                "selectConnectedEdges": True,
+                "navigationButtons": True,
+                "keyboard": True,
+                "multiselect": True,
+                "zoomView": True,
+                "dragNodes": True,
+                "dragView": True,
+                "tooltipDelay": 80
+            },
+            "nodes": {
+                "shadow": {
+                    "enabled": True,
+                    "color": "rgba(0,0,0,0.45)",
+                    "size": 8,
+                    "x": 2,
+                    "y": 2
+                }
+            },
+            "edges": {
+                "smooth": {
+                    "type": "dynamic",
+                    "roundness": 0.5
+                },
+                "hoverWidth": 2.5,
+                "selectionWidth": 3.0
+            }
+        }
+
+        try:
+            net.set_options(json.dumps(pyvis_options))
+        except Exception:
+            # Fallback to standard PyVis barnes_hut call if set_options fails
+            net.barnes_hut(
+                gravity=-4000,
+                central_gravity=0.2,
+                spring_length=spring_length,
+                spring_strength=0.05,
+                damping=0.15
+            )
+
+        # Filter nodes if filter requested
+        nodes_to_render = []
+        for nid, data in graph.nodes(data=True):
+            ntype = data.get("type", "Unknown")
+            if selected_node_types and ntype not in selected_node_types and nid not in target_ids and nid not in direct_ids:
+                continue
+            nodes_to_render.append(nid)
+
+        sub = graph.subgraph(nodes_to_render)
+
+        for nid, data in sub.nodes(data=True):
+            ntype = data.get("type", "Unknown")
+            label = data.get("name", nid)
+            fpath = data.get("file_path", "")
+            line = data.get("line_number", "")
+            doc = (data.get("docstring") or "").strip()[:100]
+
+            # Determine color and size
+            if nid in target_ids:
+                color = NODE_COLORS["Target"]
+                size = 28
+                title = f"🎯 TARGET MODIFICATION\nID: {nid}\nName: {label}\nFile: {fpath}:{line}\n{doc}"
+            elif nid in direct_ids:
+                color = NODE_COLORS["DirectImpact"]
+                size = 22
+                title = f"⚠️ DIRECT IMPACT\nID: {nid}\nName: {label}\nFile: {fpath}:{line}\n{doc}"
+            elif nid in inferred_ids:
+                color = NODE_COLORS["InferredImpact"]
+                size = 18
+                title = f"⚡ INFERRED IMPACT\nID: {nid}\nName: {label}\nFile: {fpath}:{line}\n{doc}"
+            else:
+                color = NODE_COLORS.get(ntype, NODE_COLORS["Unknown"])
+                size = 14 if ntype in ("Function", "Documentation") else 20
+                title = f"Entity: {label}\nType: {ntype}\nLocation: {fpath}:{line}\n{doc}"
+
+            net.add_node(
+                nid,
+                label=label,
+                title=title,
+                color=color,
+                size=size,
+                borderWidth=2,
+                font={"size": 12, "color": "#f8fafc", "face": "system-ui"}
+            )
+
+        for u, v, data in sub.edges(data=True):
+            rel = data.get("relation", "CONNECTS")
+            color = EDGE_COLORS.get(rel, "#475569")
+            net.add_edge(
+                u, v,
+                title=f"Relation: {rel}",
+                label=rel if len(sub.edges) < 40 else "",
+                color=color,
+                arrows="to",
+                width=1.5
+            )
+
+        # In-memory HTML generation avoids temporary file disk I/O and Windows file lock issues
+        try:
+            return net.generate_html()
+        except Exception:
+            # Fallback to tempfile if generate_html is unavailable in an older PyVis release
+            temp_path = None
+            try:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".html") as tf:
+                    temp_path = tf.name
+                net.write_html(temp_path)
+                with open(temp_path, "r", encoding="utf-8") as f:
+                    html_content = f.read()
+                return html_content
+            finally:
+                if temp_path and os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except Exception:
+                        pass

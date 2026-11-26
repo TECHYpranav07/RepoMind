@@ -1,0 +1,54 @@
+# Directory junctions (aliases for RepoMind and repomind-explorer)
+/backend
+/frontend
+
+# Python / Backend
+__pycache__/
+*.py[cod]
+*$py.class
+*.cpython-*.pyc
+.venv/
+venv/
+env/
+ENV/
+.pytest_cache/
+.coverage
+htmlcov/
+RepoMind/lib/
+
+# Environment & secrets
+.env
+.env.local
+RepoMind/.env
+RepoMind/.env.local
+RepoMind/-files .env
+
+# Cached repository runtime downloads (preserve sample_repo)
+RepoMind/repomind/data/repositories/*
+!RepoMind/repomind/data/sample_repo/
+RepoMind/repomind/data/indexes/*.faiss
+RepoMind/repomind/data/indexes/*.pkl
+RepoMind/repomind/data/indexes/*.npy
+RepoMind/repomind/data/graphs/*.json
+
+# Node / Frontend
+node_modules/
+dist/
+dist-ssr/
+.output/
+.vinxi/
+.tanstack/
+.nitro/
+.wrangler/
+.dev.vars
+logs/
+*.log
+npm-debug.log*
+
+# IDEs & OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
